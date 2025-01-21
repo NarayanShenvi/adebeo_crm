@@ -9,7 +9,7 @@ app = Flask(__name__)
 client = mongodb+srv://narayan:<9OfgyQys5pZ4kGfW>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm
 
 CORS(app)
-mongo = PyMongo(app)
+mongo = PyMongo(client)
 
 users_collection = mongo.db.users
 comment_collection = mongo.db.comments
