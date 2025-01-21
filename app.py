@@ -4,7 +4,9 @@ from flask_cors import CORS
 
 
 app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
+#app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
+# Replace <connection_string> with your MongoDB Atlas URI
+client = mongodb+srv://narayan:<9OfgyQys5pZ4kGfW>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm
 
 CORS(app)
 mongo = PyMongo(app)
