@@ -1,18 +1,21 @@
 from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo, ObjectId
+from pymongo import MongoClient
 from flask_cors import CORS
 
 
 app = Flask(__name__)
 #app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
 # Replace <connection_string> with your MongoDB Atlas URI
-client = mongodb+srv://narayan:<9OfgyQys5pZ4kGfW>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm
+# client = "mongodb+srv://narayan:<9OfgyQys5pZ4kGfW>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm"
+client = MongoClient("mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm")
 
 CORS(app)
-mongo = PyMongo(client)
+#mongo = PyMongo(client)
+db = client["adebeocrm"]
 
-users_collection = mongo.db.users
-comment_collection = mongo.db.comments
+users_collection = db.users
+comment_collection = db.comments
 
 #get all users
 @app.route("/users", methods=["GET"])
