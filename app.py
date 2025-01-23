@@ -75,7 +75,7 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     access_token = create_access_token(identity={"username": username, "role": user['role']}, expires_delta=timedelta(hours=1))
-    return jsonify({"access_token": access_token}), 200
+    return jsonify({"access_token": access_token,"role":user['role']}), 200
 
 
 #get all users
