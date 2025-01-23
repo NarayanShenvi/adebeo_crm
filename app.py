@@ -1,11 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo, ObjectId
 from pymongo import MongoClient
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity,create_access_token
+from datetime import timedelta
 from flask_cors import CORS
 
-
-
 app = Flask(__name__)
+bcrypt = Bcrypt(app)
+app.config['JWT_SECRET_KEY'] = 'your_secret_key'
+jwt = JWTManager(app)
 #app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
 # Replace <connection_string> with your MongoDB Atlas URI
 # client = "mongodb+srv://narayan:<9OfgyQys5pZ4kGfW>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm"
@@ -17,20 +21,50 @@ CORS(app)
 #mongo = PyMongo(client)
 db = client["adebeocrm"]
 
-users_collection = db['users']
-comment_collection = db['comments']
+users_collection = db['users'] # this is a temp dataset
+comment_collection = db['comments'] # this is a temp dataset
 
-
-
+adebeo_users_collection = db['adebeo_users']
+CORS(app)
 
 # app = Flask(__name__)
 # app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
-
-CORS(app)
 # mongo = PyMongo(app)
-
 #users_collection = db.users
 #comment_collection = db.comments
+
+@app.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user = get_jwt_identity()  # Decoded token payload
+    return jsonify({"message": f"Welcome {current_user['username']}!"})
+
+
+#add new login's
+@app.route("/addusers", methods=["POST"])
+def add_user():
+    user = adebeo_users_collection.insert_one({
+        "name": request.json["name"],
+        "email": request.json["email"],
+        "password": request.json["password"],
+        "role":request.json["role"]
+    })
+    return jsonify(id=str(user.inserted_id), message="user created sucessfully.")
+
+# Login route
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data['username']
+    password = data['password']
+
+    user = adebeo_users_collection.find_one({"username": username})
+    if not user or not bcrypt.check_password_hash(user['password'], password):
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    access_token = create_access_token(identity={"username": username, "role": user['role']}, expires_delta=timedelta(hours=1))
+    return jsonify({"access_token": access_token}), 200
+
 
 #get all users
 @app.route("/users", methods=["GET"])
