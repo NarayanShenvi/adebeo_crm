@@ -44,7 +44,7 @@ def protected():
 @app.route("/addusers", methods=["POST"])
 def add_user():
     data = request.json
-    username = data['username']
+    username = data['username'].lower()
     password = data['password']
     role = data['role']
 
@@ -67,7 +67,7 @@ def add_user():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    username = data['username']
+    username = data['username'].lower()
     password = data['password']
 
     user = adebeo_users_collection.find_one({"username": username})
