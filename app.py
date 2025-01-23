@@ -43,13 +43,25 @@ def protected():
 #add new login's
 @app.route("/addusers", methods=["POST"])
 def add_user():
-    user = adebeo_users_collection.insert_one({
-        "name": request.json["name"],
-        "email": request.json["email"],
-        "password": request.json["password"],
-        "role":request.json["role"]
-    })
-    return jsonify(id=str(user.inserted_id), message="user created sucessfully.")
+        data = request.json
+    username = data['username']
+    password = data['password']
+    role = data ['role']
+
+    if user_collection.find_one({"username": username}):
+        return jsonify({"error": "User already exists"}), 400
+
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    user = {"username": username, "password": hashed_password, "role": role}
+    user_collection.insert_one(user)
+    return jsonify({"message": "User registered successfully"}), 201
+    # user = adebeo_users_collection.insert_one({
+    #     "name": request.json["name"],
+    #     "email": request.json["email"],
+    #     "password": request.json["password"],
+    #     "role":request.json["role"]
+    # })
+    # return jsonify(id=str(user.inserted_id), message="user created sucessfully.")
 
 # Login route
 @app.route('/login', methods=['POST'])
