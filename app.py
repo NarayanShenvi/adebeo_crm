@@ -35,39 +35,44 @@ adebeo_customer_collection=db['adebeo_customers']
 CORS(app)
 
 # Decorator to protect routes and extract user info
-def decorated_function(*args, **kwargs):
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({"error": "Missing token in request"}), 400
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for token presence in the Authorization header
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({"error": "Missing token in request"}), 400
 
-    try:
-        # Verify the JWT token
-        verify_jwt_in_request()
+        try:
+            # Verify the JWT token
+            verify_jwt_in_request()
 
-        # Get the user's identity (stored in the token)
-        current_user = get_jwt_identity()
+            # Get the user's identity (stored in the token)
+            current_user = get_jwt_identity()
 
-        # Store the user info in the request context (optional)
-        request.user = current_user
+            # Store the user info in the request context (optional)
+            request.user = current_user
 
-    except Exception as e:
-        # Log the exception for better debugging (optional)
-        logging.error(f"Authentication error at {request.path}: {str(e)}")
+        except Exception as e:
+            # Log the exception for better debugging
+            logging.error(f"Authentication error at {request.path} for user {request.user if hasattr(request, 'user') else 'unknown'}: {str(e)}")
 
-        # Handle specific JWT exceptions
-        if isinstance(e, ExpiredSignatureError):
-            return jsonify({"error": "Token has expired", "message": str(e)}), 401
-        elif isinstance(e, InvalidTokenError):
-            return jsonify({"error": "Invalid token", "message": str(e)}), 401
-        elif isinstance(e, DecodeError):
-            return jsonify({"error": "Token decode error", "message": str(e)}), 401
-        elif isinstance(e, InvalidAlgorithmError):
-            return jsonify({"error": "Invalid algorithm", "message": str(e)}), 401
+            # Handle specific JWT exceptions
+            if isinstance(e, ExpiredSignatureError):
+                return jsonify({"error": "Token has expired", "message": str(e)}), 401
+            elif isinstance(e, InvalidTokenError):
+                return jsonify({"error": "Invalid token", "message": str(e)}), 401
+            elif isinstance(e, DecodeError):
+                return jsonify({"error": "Token decode error", "message": str(e)}), 401
+            elif isinstance(e, InvalidAlgorithmError):
+                return jsonify({"error": "Invalid algorithm", "message": str(e)}), 401
+            elif isinstance(e, InvalidSignatureError):
+                return jsonify({"error": "Invalid token signature", "message": str(e)}), 401
 
-        # Generic error handling (if it's any other exception)
-        return jsonify({"error": "Authentication required", "message": str(e)}), 401
+            # Generic error handling (if it's any other exception)
+            return jsonify({"error": "Authentication required", "message": str(e)}), 401
 
-    return f(*args, **kwargs)
+        return f(*args, **kwargs)
 
     return decorated_function
 
