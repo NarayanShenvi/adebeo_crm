@@ -156,7 +156,9 @@ def get_user(id):
 #add adebeo_customers if the email id are unique, else send message ID already exist, protected route needs authentication
 @app.route("/create_adebeo_customers", methods=["POST"])
 @login_required
-def create_adebeo_user():
+def create_adebeo_customers():
+    auth_header = request.headers.get("Authorization")
+    print(f"Authorization Header: {auth_header}")  # For debugging
     # Get the email from the request body
     email = request.json.get("primaryEmail")
     current_user = request.user
