@@ -10,7 +10,7 @@ from functools import wraps
 import logging
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError,InvalidSignatureError
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
@@ -39,26 +39,26 @@ CORS(app)
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check for token presence in the Authorization header
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({"error": "Missing token in request"}), 400
-
         try:
-            # Verify the JWT token
+            logging.info("Starting JWT verification...")
+            
+            # Step 1: Verify the JWT token
             verify_jwt_in_request()
+            logging.info("JWT verification successful.")
 
-            # Get the user's identity (stored in the token)
+            # Step 2: Get the user's identity from the token
             current_user = get_jwt_identity()
+            logging.info(f"User identity extracted: {current_user}")
 
-            # Store the user info in the request context (optional)
+            # Step 3: Store user info in the request context (optional)
             request.user = current_user
+            logging.info("User information added to request context.")
 
         except Exception as e:
-            # Log the exception for better debugging
-            logging.error(f"Authentication error at {request.path} for user {request.user if hasattr(request, 'user') else 'unknown'}: {str(e)}")
+            # Log where the error occurred
+            logging.error(f"Authentication error at {request.path}: {str(e)}")
 
-            # Handle specific JWT exceptions
+            # Handle JWT-specific exceptions (optional, for better debugging)
             if isinstance(e, ExpiredSignatureError):
                 return jsonify({"error": "Token has expired", "message": str(e)}), 401
             elif isinstance(e, InvalidTokenError):
@@ -67,10 +67,8 @@ def login_required(f):
                 return jsonify({"error": "Token decode error", "message": str(e)}), 401
             elif isinstance(e, InvalidAlgorithmError):
                 return jsonify({"error": "Invalid algorithm", "message": str(e)}), 401
-            elif isinstance(e, InvalidSignatureError):
-                return jsonify({"error": "Invalid token signature", "message": str(e)}), 401
 
-            # Generic error handling (if it's any other exception)
+            # Catch all other exceptions
             return jsonify({"error": "Authentication required", "message": str(e)}), 401
 
         return f(*args, **kwargs)
