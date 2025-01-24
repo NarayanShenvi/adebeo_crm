@@ -8,8 +8,9 @@ from flask_cors import CORS
 from datetime import datetime
 from functools import wraps
 import logging
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
@@ -49,13 +50,17 @@ def login_required(f):
 
         except Exception as e:
             # Log the exception for better debugging (optional)
-            logging.error(f"Authentication error: {str(e)}")
+            logging.error(f"Authentication error at {request.path}: {str(e)}")
 
             # Handle specific JWT exceptions
             if isinstance(e, ExpiredSignatureError):
                 return jsonify({"error": "Token has expired", "message": str(e)}), 401
             elif isinstance(e, InvalidTokenError):
                 return jsonify({"error": "Invalid token", "message": str(e)}), 401
+            elif isinstance(e, DecodeError):
+                return jsonify({"error": "Token decode error", "message": str(e)}), 401
+            elif isinstance(e, InvalidAlgorithmError):
+                return jsonify({"error": "Invalid algorithm", "message": str(e)}), 401
 
             # Generic error handling (if it's any other exception)
             return jsonify({"error": "Authentication required", "message": str(e)}), 401
