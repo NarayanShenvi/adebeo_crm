@@ -184,7 +184,12 @@ def get_user(id):
 @login_required
 def create_adebeo_customers():
     auth_header = request.headers.get("Authorization")
-    print(f"Authorization Header: {auth_header}")  # For debugging
+    if auth_header:
+        print(f"Authorization Header: {auth_header}")
+    else:
+        print("Authorization header is missing in the request.")
+
+    #print(f"Authorization Header: {auth_header}")  # For debugging 
     # Get the email from the request body
     email = request.json.get("primaryEmail")
     current_user = request.user
