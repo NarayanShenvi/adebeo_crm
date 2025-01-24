@@ -45,11 +45,21 @@ def login_required(f):
             request.user = current_user
 
         except Exception as e:
+            # Log the exception for better debugging (optional)
+            logging.error(f"Authentication error: {str(e)}")
+
+            # Handle specific JWT exceptions
+            if isinstance(e, ExpiredSignatureError):
+                return jsonify({"error": "Token has expired", "message": str(e)}), 401
+            elif isinstance(e, InvalidTokenError):
+                return jsonify({"error": "Invalid token", "message": str(e)}), 401
+
+            # Generic error handling (if it's any other exception)
             return jsonify({"error": "Authentication required", "message": str(e)}), 401
 
         return f(*args, **kwargs)
 
-    return decorated_function 
+    return decorated_function
 
 # app = Flask(__name__)
 # app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
