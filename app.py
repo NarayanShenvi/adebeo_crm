@@ -14,7 +14,8 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
-app.config['JWT_SECRET_KEY'] = 'your_secret_key'
+app.config['JWT_SECRET_KEY'] = 'your_strong_secret_key'  # Replace with a secure key
+app.config['JWT_ALGORITHM'] = 'HS256'
 jwt = JWTManager(app)
 #app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
 # Replace <connection_string> with your MongoDB Atlas URI
