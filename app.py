@@ -41,7 +41,7 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         try:
             logging.info("Starting JWT verification...")
-             auth_header = request.headers.get("Authorization", "")
+            auth_header = request.headers.get("Authorization", "")
             logging.info(f"Authorization Header: {auth_header}")
             # Step 1: Verify the JWT token
             verify_jwt_in_request()
