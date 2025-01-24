@@ -7,6 +7,9 @@ from datetime import timedelta
 from flask_cors import CORS
 from datetime import datetime
 from functools import wraps
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
