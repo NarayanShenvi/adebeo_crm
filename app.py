@@ -227,8 +227,8 @@ def create_adebeo_customers():
             "linkedin": request.json.get("linkedin"),
             "insta": request.json.get("insta"),
             "funnelType": request.json.get("funnelType"),
-            "insertDate": datetime.utcnow(),
-            "insertBy": username,  # Replace with the actual logged-in user ID
+            "insertDate": datetime.now(),
+            "insertBy": username
         }
 
         result = adebeo_customer_collection.insert_one(new_user)
