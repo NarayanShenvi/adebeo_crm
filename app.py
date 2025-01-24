@@ -8,7 +8,7 @@ from flask_cors import CORS
 from datetime import datetime
 from functools import wraps
 import logging
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError,InvalidSignatureError
 
 #logging.basicConfig(level=logging.DEBUG)
 
