@@ -10,7 +10,7 @@ from functools import wraps
 import logging
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError,InvalidSignatureError
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
@@ -194,8 +194,8 @@ def create_adebeo_customers():
     email = request.json.get("primaryEmail")
     current_user = request.user
     # Use current_user['username'] and current_user['role'] as needed
-    username = current_user.get("username")
-    role = current_user.get("role")
+    username = current_user #.get("username")
+    #role = current_user.get("role")
 
     if not email:
         return jsonify({"error": "Primary email is required"}), 400
@@ -234,6 +234,49 @@ def create_adebeo_customers():
         result = adebeo_customer_collection.insert_one(new_user)
 
         return jsonify(id=str(result.inserted_id), message="User created successfully.")
+
+# @app.route("/create_adebeo_customers", methods=["POST"])
+# @login_required
+# def create_adebeo_customers():
+#     try:
+#         auth_header = request.headers.get("Authorization")
+#         print(f"Authorization Header: {auth_header}")
+
+#         email = request.json.get("primaryEmail")
+#         if not email:
+#             return jsonify({"error": "Primary email is required"}), 400
+
+#         current_user = request.user
+#         username = current_user #.get("username")
+
+#         new_user = {
+#             "companyName": request.json.get("companyName"),
+#             "companyType": request.json.get("companyType"),
+#             "ownerName": request.json.get("ownerName"),
+#             "mobileNumber": request.json.get("mobileNumber"),
+#             "primaryEmail": email,
+#             "altemail": request.json.get("altemail"),
+#             "gstin": request.json.get("gstin"),
+#             "address": request.json.get("address"),
+#             "primaryLocality": request.json.get("primaryLocality"),
+#             "secondaryLocality": request.json.get("secondaryLocality"),
+#             "city": request.json.get("city"),
+#             "state": request.json.get("state"),
+#             "pincode": request.json.get("pincode"),
+#             "products": request.json.get("products"),
+#             "website": request.json.get("website"),
+#             "linkedin": request.json.get("linkedin"),
+#             "insta": request.json.get("insta"),
+#             "funnelType": request.json.get("funnelType"),
+#             "insertDate": datetime.utcnow(),
+#             "insertBy": username,  # Replace with the actual logged-in user ID
+#         }
+#         result = adebeo_customer_collection.insert_one(new_user)
+#         return jsonify({"id": str(result.inserted_id), "message": "User created successfully."})
+
+#     except Exception as e:
+#         logging.error(f"Error in /create_adebeo_customers: {str(e)}")
+#         return jsonify({"error": "Internal server error", "message": str(e)}), 500
  
 
 #add user, used only for initial samples
