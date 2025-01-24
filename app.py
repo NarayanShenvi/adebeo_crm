@@ -160,6 +160,10 @@ def create_adebeo_user():
     # Get the email from the request body
     email = request.json.get("primaryEmail")
     current_user = request.user
+    # Use current_user['username'] and current_user['role'] as needed
+    username = current_user.get("username")
+    role = current_user.get("role")
+
     if not email:
         return jsonify({"error": "Primary email is required"}), 400
 
@@ -191,7 +195,7 @@ def create_adebeo_user():
             "insta": request.json.get("insta"),
             "funnelType": request.json.get("funnelType"),
             "insertDate": datetime.utcnow(),
-            "insertBy": current_user,  # Replace with the actual logged-in user ID
+            "insertBy": username,  # Replace with the actual logged-in user ID
         }
 
         result = adebeo_customer_collection.insert_one(new_user)
