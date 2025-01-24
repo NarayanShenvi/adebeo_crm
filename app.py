@@ -2,9 +2,11 @@ from flask import Flask, request, jsonify
 from flask_pymongo import PyMongo, ObjectId
 from pymongo import MongoClient
 from flask_bcrypt import Bcrypt
-from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity,create_access_token
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity,create_access_token,verify_jwt_in_request
 from datetime import timedelta
 from flask_cors import CORS
+from datetime import datetime
+from functools import wraps
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
@@ -25,7 +27,29 @@ users_collection = db['users'] # this is a temp dataset
 comment_collection = db['comments'] # this is a temp dataset
 
 adebeo_users_collection = db['adebeo_users']
+adebeo_customer_collection=db['adebeo_customers']
 CORS(app)
+
+# Decorator to protect routes and extract user info
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # Verify the JWT token
+            verify_jwt_in_request()
+
+            # Get the user's identity (stored in the token)
+            current_user = get_jwt_identity()
+
+            # Store the user info in the request context (optional)
+            request.user = current_user
+
+        except Exception as e:
+            return jsonify({"error": "Authentication required", "message": str(e)}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated_function 
 
 # app = Flask(__name__)
 # app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
@@ -78,7 +102,7 @@ def login():
     return jsonify({"access_token": access_token,"role":user['role']}), 200
 
 
-#get all users
+#get all users, used only for initial samples
 @app.route("/users", methods=["GET"])
 def get_users():
     users = []
@@ -91,6 +115,7 @@ def get_users():
         })
     return jsonify(users)
 
+#search all users, used only for initial samples
 @app.route("/allusers/<search_text>", methods=["GET"])
 def get_filtered_users(search_text):
     # Convert search text to lowercase to make the search case-insensitive
@@ -115,8 +140,10 @@ def get_filtered_users(search_text):
 
     # Return filtered users
     return jsonify(users)
-     
 
+     
+     
+#get user, used only for initial samples
 @app.route("/users/<id>", methods=["GET"])
 def get_user(id):
     user = users_collection.find_one({"_id": ObjectId(id)})
@@ -126,10 +153,53 @@ def get_user(id):
         user = {}
     return jsonify(user=user)
 
-#@app.route("/")
-#def index():
-#    return '<h1>Hello World</h1'
+#add adebeo_customers if the email id are unique, else send message ID already exist, protected route needs authentication
+@app.route("/create_adebeo_customers", methods=["POST"])
+@login_required
+def create_adebeo_user():
+    # Get the email from the request body
+    email = request.json.get("primaryEmail")
 
+    if not email:
+        return jsonify({"error": "Primary email is required"}), 400
+
+    # Check if the email already exists
+    existing_user = adebeo_customer_collection.find_one({"primaryEmail": {"$regex": f"^{email}$", "$options": "i"}})
+    #existing_user = adebeo_customer_collection.find_one({"primaryEmail": email})
+
+    if existing_user:
+        return jsonify({"exists": True, "message": "Email already exists!"}), 409
+    else:
+        # Insert the new user
+        new_user = {
+            "companyName": request.json.get("companyName"),
+            "companyType": request.json.get("companyType"),
+            "ownerName": request.json.get("ownerName"),
+            "mobileNumber": request.json.get("mobileNumber"),
+            "primaryEmail": email,
+            "altemail": request.json.get("altemail"),
+            "gstin": request.json.get("gstin"),
+            "address": request.json.get("address"),
+            "primaryLocality": request.json.get("primaryLocality"),
+            "secondaryLocality": request.json.get("secondaryLocality"),
+            "city": request.json.get("city"),
+            "state": request.json.get("state"),
+            "pincode": request.json.get("pincode"),
+            "products": request.json.get("products"),
+            "website": request.json.get("website"),
+            "linkedin": request.json.get("linkedin"),
+            "insta": request.json.get("insta"),
+            "funnelType": request.json.get("funnelType"),
+            "insertDate": datetime.utcnow(),
+            "insertBy": "aaaa",  # Replace with the actual logged-in user ID
+        }
+
+        result = adebeo_customer_collection.insert_one(new_user)
+
+        return jsonify(id=str(result.inserted_id), message="User created successfully.")
+ 
+
+#add user, used only for initial samples
 @app.route("/users", methods=["POST"])
 def create_user():
     user = users_collection.insert_one({
@@ -224,6 +294,7 @@ def add_comments():
         "comment": request.json["comment"]
     })
     return jsonify(id=str(comment.inserted_id), message="user comment added sucessfully.")
+
 
 
 if __name__ == "__main__":
