@@ -264,7 +264,8 @@ def add_comments():
     username = request.user
 
     comment = adebeo_customer_comments.insert_one({
-        "comment": request.json["comment"]
+        "comment": request.json["comment"],
+        "customer_id":request.json["customer_id"],
         "insertDate": datetime.utcnow(),
         "insertBy": username
     })
