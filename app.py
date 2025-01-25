@@ -9,6 +9,7 @@ from datetime import datetime
 from functools import wraps
 import logging
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError,InvalidSignatureError
+from bson import ObjectId 
 
 #logging.basicConfig(level=logging.DEBUG)
 
@@ -205,10 +206,14 @@ def get_funnel_customers():
         return jsonify({"error": "No funnel records found for this user"}), 404
 
     # Collect the customer_id from each matching funnel entry
-    customer_ids = [funnel["customer_id"] for funnel in funnel_data]
+    #customer_ids = [funnel["customer_id"] for funnel in funnel_data]
+
+    # Extract customer IDs from the funnel data
+    customer_ids = [ObjectId(entry['customer_id']) for entry in funnel_data]
+    print(f"Customer IDs: {customer_ids}")  # Print extracted customer IDs
 
     # Debugging: Check customer_ids
-    print(f"Customer IDs: {customer_ids}")  # Add this line for debugging
+    #print(f"Customer IDs: {customer_ids}")  # Add this line for debugging
 
     # Now, lookup customers from 'adebeo_customer_collection' using customer_id(s)
     customer_data = db.adebeo_customers.find({"_id": {"$in": customer_ids}})
