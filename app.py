@@ -186,8 +186,6 @@ def get_user(id):
 @login_required
 def get_funnel_customers():
     # Get the username from the JWT token
-    #sample url URL: /funnel_customers?page=2&limit=10
-    auth_header = request.headers.get("Authorization")
     username = request.user
 
     # Query params for pagination
@@ -200,22 +198,26 @@ def get_funnel_customers():
     # Query the 'adebeo_user_funnel' collection to find records where assigned_to matches the username
     funnel_data = db.adebeo_user_funnel.find({"assigned_to": username}).skip(skip).limit(limit)
 
+    # Debugging: Check if funnel_data has results
+    print(f"Funnel Data: {list(funnel_data)}")  # Add this line for debugging
+
     if not funnel_data:
         return jsonify({"error": "No funnel records found for this user"}), 404
 
     # Collect the customer_id from each matching funnel entry
     customer_ids = [funnel["customer_id"] for funnel in funnel_data]
 
+    # Debugging: Check customer_ids
+    print(f"Customer IDs: {customer_ids}")  # Add this line for debugging
+
     # Now, lookup customers from 'adebeo_customer_collection' using customer_id(s)
     customer_data = db.adebeo_customers.find({"_id": {"$in": customer_ids}})
 
-    # Convert customer_data to a list of dictionaries to return as JSON
-    customers = list(customer_data)
+    # Debugging: Check if customer_data has results
+    print(f"Customer Data: {list(customer_data)}")  # Add this line for debugging
 
-    # Query the 'adebeo_customer_comments' collection to get comments for each customer
+    # Collect comments for these customers
     comments_data = db.adebeo_customer_comments.find({"customer_id": {"$in": customer_ids}})
-
-    # Convert comments_data to a dictionary, keyed by customer_id for easy lookup
     comments_dict = {}
     for comment in comments_data:
         customer_id = str(comment["customer_id"])
@@ -227,7 +229,7 @@ def get_funnel_customers():
     result = []
     for funnel in funnel_data:
         # For each funnel record, find the corresponding customer details
-        customer = next((cust for cust in customers if str(cust["_id"]) == str(funnel["customer_id"])), None)
+        customer = next((cust for cust in customer_data if str(cust["_id"]) == str(funnel["customer_id"])), None)
         
         if customer:
             customer_id_str = str(customer["_id"])
@@ -243,6 +245,9 @@ def get_funnel_customers():
                 "customer_details": customer,
                 "comments": comments  # Attach the comments for this customer
             })
+
+    # Debugging: Check the combined result before returning
+    print(f"Result Data: {result}")  # Add this line for debugging
 
     # Calculate total number of pages
     total_records = db.adebeo_user_funnel.count_documents({"assigned_to": username})
