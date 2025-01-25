@@ -181,6 +181,7 @@ def get_user(id):
         user = {}
     return jsonify(user=user)
 
+# get adebeo user connected funnel data with pagination 
 @app.route("/funnel_customers", methods=["GET"])
 @login_required
 def get_funnel_customers():
@@ -256,6 +257,18 @@ def get_funnel_customers():
         "data": result
     }), 200
 
+@app.route("/create_adebeo_customer_comments", methods=["POST"])
+@login_required
+def add_comments():
+    auth_header = request.headers.get("Authorization")
+    username = request.user
+
+    comment = adebeo_customer_comments.insert_one({
+        "comment": request.json["comment"]
+        "insertDate": datetime.utcnow(),
+        "insertBy": username
+    })
+    return jsonify(id=str(comment.inserted_id), message="user comment added sucessfully.")
 
 
 #add adebeo_customers if the email id are unique, else send message ID already exist, protected route needs authentication
