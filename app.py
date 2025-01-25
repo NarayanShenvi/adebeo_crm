@@ -196,7 +196,7 @@ def get_funnel_customers():
     skip = (page - 1) * limit
 
     # Query the 'adebeo_user_funnel' collection to find records where assigned_to matches the username
-    funnel_data = db.adebeo_user_funnel.find({"assigned_to": username}).skip(skip).limit(limit)
+    funnel_data = db.adebeo_funnel.find({"assigned_to": username}).skip(skip).limit(limit)
 
     # Debugging: Check if funnel_data has results
     print(f"Funnel Data: {list(funnel_data)}")  # Add this line for debugging
