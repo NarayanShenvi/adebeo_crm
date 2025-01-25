@@ -34,6 +34,7 @@ comment_collection = db['comments'] # this is a temp dataset
 adebeo_users_collection = db['adebeo_users']
 adebeo_customer_collection=db['adebeo_customers']
 adebeo_user_funnel=db['adebeo_funnel']
+adebeo_customer_comments=db['adebeo_customer_comments']
 CORS(app)
 
 # Decorator to protect routes and extract user info
@@ -180,6 +181,83 @@ def get_user(id):
         user = {}
     return jsonify(user=user)
 
+@app.route("/funnel_customers", methods=["GET"])
+@login_required
+def get_funnel_customers():
+    # Get the username from the JWT token
+    #sample url URL: /funnel_customers?page=2&limit=10
+    auth_header = request.headers.get("Authorization")
+    username = request.user
+
+    # Query params for pagination
+    page = int(request.args.get('page', 1))  # Default to page 1
+    limit = int(request.args.get('limit', 10))  # Default to limit of 10
+
+    # Calculate the number of records to skip
+    skip = (page - 1) * limit
+
+    # Query the 'adebeo_user_funnel' collection to find records where assigned_to matches the username
+    funnel_data = db.adebeo_user_funnel.find({"assigned_to": username}).skip(skip).limit(limit)
+
+    if not funnel_data:
+        return jsonify({"error": "No funnel records found for this user"}), 404
+
+    # Collect the customer_id from each matching funnel entry
+    customer_ids = [funnel["customer_id"] for funnel in funnel_data]
+
+    # Now, lookup customers from 'adebeo_customer_collection' using customer_id(s)
+    customer_data = db.adebeo_customers.find({"_id": {"$in": customer_ids}})
+
+    # Convert customer_data to a list of dictionaries to return as JSON
+    customers = list(customer_data)
+
+    # Query the 'adebeo_customer_comments' collection to get comments for each customer
+    comments_data = db.adebeo_customer_comments.find({"customer_id": {"$in": customer_ids}})
+
+    # Convert comments_data to a dictionary, keyed by customer_id for easy lookup
+    comments_dict = {}
+    for comment in comments_data:
+        customer_id = str(comment["customer_id"])
+        if customer_id not in comments_dict:
+            comments_dict[customer_id] = []
+        comments_dict[customer_id].append(comment)
+
+    # Combine funnel data, customer details, and comments together
+    result = []
+    for funnel in funnel_data:
+        # For each funnel record, find the corresponding customer details
+        customer = next((cust for cust in customers if str(cust["_id"]) == str(funnel["customer_id"])), None)
+        
+        if customer:
+            customer_id_str = str(customer["_id"])
+
+            # Fetch the comments for the current customer
+            comments = comments_dict.get(customer_id_str, [])
+
+            # Combine the funnel data, customer details, and comments
+            result.append({
+                "funnel_id": str(funnel["_id"]),
+                "assigned_to": funnel["assigned_to"],
+                "assigned_date": funnel["assigned_date"],
+                "customer_details": customer,
+                "comments": comments  # Attach the comments for this customer
+            })
+
+    # Calculate total number of pages
+    total_records = db.adebeo_user_funnel.count_documents({"assigned_to": username})
+    total_pages = (total_records // limit) + (1 if total_records % limit > 0 else 0)
+
+    # Return the paginated result
+    return jsonify({
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "total_records": total_records,
+        "data": result
+    }), 200
+
+
+
 #add adebeo_customers if the email id are unique, else send message ID already exist, protected route needs authentication
 @app.route("/create_adebeo_customers", methods=["POST"])
 @login_required
@@ -240,7 +318,7 @@ def create_adebeo_customers():
     }
 
     adebeo_user_funnel.insert_one(funnel_entry)
-
+ 
     return jsonify(id=str(result.inserted_id), message="New Customer added successfully.")
 
  
