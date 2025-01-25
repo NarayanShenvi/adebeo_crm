@@ -9,7 +9,7 @@ from datetime import datetime
 from functools import wraps
 import logging
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, DecodeError, InvalidAlgorithmError,InvalidSignatureError
-from bson import ObjectId 
+from bson import ObjectId, json_util
 
 #logging.basicConfig(level=logging.DEBUG)
 
@@ -183,89 +183,83 @@ def get_user(id):
     return jsonify(user=user)
 
 # get adebeo user connected funnel data with pagination 
+# Helper function to recursively convert ObjectId to string
+def convert_objectid_to_str(data):
+    if isinstance(data, list):
+        return [convert_objectid_to_str(item) for item in data]
+    elif isinstance(data, dict):
+        return {key: convert_objectid_to_str(value) for key, value in data.items()}
+    elif isinstance(data, ObjectId):
+        return str(data)
+    else:
+        return data
+
 @app.route("/funnel_customers", methods=["GET"])
 @login_required
 def get_funnel_customers():
-    # Get the username from the JWT token
-    username = request.user
+    try:
+        username = request.user
+        # Query params for pagination
+        page = int(request.args.get('page', 1))  # Get the page number from URL query param
+        limit = int(request.args.get('limit', 10))  # Get the number of items per page from URL query param
 
-    # Query params for pagination
-    page = int(request.args.get('page', 1))  # Default to page 1
-    limit = int(request.args.get('limit', 10))  # Default to limit of 10
+        # Calculate the skip for pagination
+        skip = (page - 1) * limit
 
-    # Calculate the number of records to skip
-    skip = (page - 1) * limit
+        # Fetch funnel data assigned to the current user (i.e., username)
+        funnel_data_cursor = db['adebeo_funnel'].find({"assigned_to": username}).skip(skip).limit(limit)
 
-    # Query the 'adebeo_user_funnel' collection to find records where assigned_to matches the username
-    funnel_data = db.adebeo_funnel.find({"assigned_to": username}).skip(skip).limit(limit)
+        # Convert cursor to list
+        funnel_data = list(funnel_data_cursor)
+        if not funnel_data:
+            return jsonify({"message": "No funnel data found"}), 404
 
-    # Debugging: Check if funnel_data has results
-    print(f"Funnel Data: {list(funnel_data)}")  # Add this line for debugging
+        # Extract customer_ids
+        customer_ids = [entry['customer_id'] for entry in funnel_data]
+        if not customer_ids:
+            return jsonify({"message": "No customer IDs found"}), 404
 
-    if not funnel_data:
-        return jsonify({"error": "No funnel records found for this user"}), 404
+        # Convert customer_ids to ObjectId if needed
+        customer_ids = [ObjectId(cid) for cid in customer_ids]
 
-    # Collect the customer_id from each matching funnel entry
-    #customer_ids = [funnel["customer_id"] for funnel in funnel_data]
+        # Fetch the customer details using the customer IDs
+        customer_data_cursor = db['adebeo_customers'].find({"_id": {"$in": customer_ids}})
+        customer_data = list(customer_data_cursor)
+        if not customer_data:
+            return jsonify({"message": "No customer data found"}), 404
 
-    # Extract customer IDs from the funnel data
-    customer_ids = [ObjectId(entry['customer_id']) for entry in funnel_data]
-    print(f"Customer IDs: {customer_ids}")  # Print extracted customer IDs
+        # Fetch comments for each customer
+        customer_with_comments = []
+        for customer in customer_data:
+            #print(f"Fetching comments for customer: {customer['_id']}")  # Add logging to track which customer is being processed
+            comments_cursor = db['adebeo_customer_comments'].find({"customer_id": str(customer['_id'])})
+            comments = list(comments_cursor)
+            #print(f"Comments found: {comments}")  # Add logging for the comments found
+            customer['comments'] = comments
+            customer_with_comments.append(customer)
 
-    # Debugging: Check customer_ids
-    #print(f"Customer IDs: {customer_ids}")  # Add this line for debugging
+        # Convert ObjectId fields to strings
+        customer_with_comments = convert_objectid_to_str(customer_with_comments)
 
-    # Now, lookup customers from 'adebeo_customer_collection' using customer_id(s)
-    customer_data = db.adebeo_customers.find({"_id": {"$in": customer_ids}})
+        # Paginate results
+        total_records = len(customer_with_comments)
+        total_pages = (total_records // limit) + (1 if total_records % limit else 0)
 
-    # Debugging: Check if customer_data has results
-    print(f"Customer Data: {list(customer_data)}")  # Add this line for debugging
+        # Return the response with jsonify
+        return jsonify({
+            "data": customer_with_comments,
+            "limit": limit,
+            "page": page,
+            "total_pages": total_pages,
+            "total_records": total_records
+        })
 
-    # Collect comments for these customers
-    comments_data = db.adebeo_customer_comments.find({"customer_id": {"$in": customer_ids}})
-    comments_dict = {}
-    for comment in comments_data:
-        customer_id = str(comment["customer_id"])
-        if customer_id not in comments_dict:
-            comments_dict[customer_id] = []
-        comments_dict[customer_id].append(comment)
+    except Exception as e:
+        # Log the error
+        print(f"Error occurred: {str(e)}")
+        return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
-    # Combine funnel data, customer details, and comments together
-    result = []
-    for funnel in funnel_data:
-        # For each funnel record, find the corresponding customer details
-        customer = next((cust for cust in customer_data if str(cust["_id"]) == str(funnel["customer_id"])), None)
-        
-        if customer:
-            customer_id_str = str(customer["_id"])
 
-            # Fetch the comments for the current customer
-            comments = comments_dict.get(customer_id_str, [])
-
-            # Combine the funnel data, customer details, and comments
-            result.append({
-                "funnel_id": str(funnel["_id"]),
-                "assigned_to": funnel["assigned_to"],
-                "assigned_date": funnel["assigned_date"],
-                "customer_details": customer,
-                "comments": comments  # Attach the comments for this customer
-            })
-
-    # Debugging: Check the combined result before returning
-    print(f"Result Data: {result}")  # Add this line for debugging
-
-    # Calculate total number of pages
-    total_records = db.adebeo_user_funnel.count_documents({"assigned_to": username})
-    total_pages = (total_records // limit) + (1 if total_records % limit > 0 else 0)
-
-    # Return the paginated result
-    return jsonify({
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages,
-        "total_records": total_records,
-        "data": result
-    }), 200
 
 @app.route("/create_adebeo_customer_comments", methods=["POST"])
 @login_required
