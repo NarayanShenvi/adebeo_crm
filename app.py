@@ -315,6 +315,53 @@ def create_adebeo_customer_comments():
     })
     return jsonify(id=str(comment.inserted_id), message="user comment added sucessfully.")
 
+#App route to get the Selected Customer comments
+@app.route("/get_adebeo_customer_comments/<id>", methods=["GET"])
+@login_required
+def get_adebeo_customer_comments(id):
+    auth_header = request.headers.get("Authorization")
+    username = request.user
+    
+    # Print the received customer_id for debugging
+    print(f"Received customer_id: {id}")
+
+    try:
+        # Query to match customer_id with the string version of id
+        comments_cursor = db['adebeo_customer_comments'].find({"customer_id": str(id)})
+        
+        # Print the raw result to check what is returned from the query
+        comments_list = list(comments_cursor)
+        print(f"Comments found: {comments_list}")
+        
+        # If there are no comments found, log that and return an appropriate message
+        if not comments_list:
+            return jsonify({
+                "comments": [],
+                "message": "No comments found for the given customer ID."
+            })
+        
+        # Process the comments to return the necessary data
+        response_comments = []
+        for comment in comments_list:
+            comment_data = {
+                "date": comment.get("insertDate", ""),
+                "comment": comment.get("comment", ""),
+                "name": comment.get("insertBy", "")
+            }
+            response_comments.append(comment_data)
+
+        # Return the comments as a JSON response
+        return jsonify({
+            "comments": response_comments,
+            "message": "Comments retrieved successfully."
+        })
+    except Exception as e:
+        print(f"Error retrieving comments: {e}")
+        return jsonify({
+            "comments": [],
+            "message": "An error occurred while retrieving comments."
+        })
+
 #update single customer after edit
 @app.route("/update_adebeo_customer/<id>", methods=["PUT"])
 @login_required
