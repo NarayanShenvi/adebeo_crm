@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity,create_access_token,verify_jwt_in_request,get_jwt
 from datetime import timedelta
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from datetime import datetime, timezone
 from functools import wraps
 import logging
@@ -49,7 +49,6 @@ adebeo_user_funnel=db['adebeo_funnel']
 adebeo_customer_comments=db['adebeo_customer_comments']
 adebeo_products=db['adebeo_products']
 adebeo_quotes_collection=db['adebeo_quotes']
-CORS(app)
 
 # Configure logging
 # logging.basicConfig(
@@ -468,6 +467,7 @@ def get_adebeo_customer():
 
 #get the list of valid products
 @app.route("/getall_adebeo_products", methods=["GET"])
+@cross_origin(origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
 @login_required
 def get_adebeo_products():
     try:
