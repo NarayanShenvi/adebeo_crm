@@ -36,8 +36,8 @@ MONGODB_URI = "mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.ne
 # Connect to MongoDB
 client = MongoClient(MONGODB_URI)
 
-#CORS(app)
-CORS(app, origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
+CORS(app)
+#CORS(app, origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
 #mongo = PyMongo(client)
 db = client["adebeocrm"]
 
