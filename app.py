@@ -36,7 +36,8 @@ MONGODB_URI = "mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.ne
 # Connect to MongoDB
 client = MongoClient(MONGODB_URI)
 
-CORS(app)
+#CORS(app)
+CORS(app, origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
 #mongo = PyMongo(client)
 db = client["adebeocrm"]
 
@@ -465,30 +466,31 @@ def get_adebeo_customer():
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
-#get the list of valid products
-@app.route("/getall_adebeo_products", methods=["GET"])
-@cross_origin(origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
+@app.route("/getall_adebeo_products", methods=["GET"]) #maintain lowercase at the route levels
+# @cross_origin(origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
 @login_required
-def get_adebeo_products():
+def getAll_adebeo_products():
+    # if request.method == "OPTIONS":
+    #     print("Received OPTIONS request for /getAll_adebeo_products")
+    #     # Handle OPTIONS request (preflight request)
+    #     response = app.make_response(('', 200))  # Status 200 OK
+    #     response.headers['Access-Control-Allow-Origin'] = "http://localhost:3000"
+    #     response.headers['Access-Control-Allow-Headers'] = "Authorization, Content-Type, X-Requested-With"
+    #     response.headers['Access-Control-Allow-Methods'] = "GET, OPTIONS"
+    #     response.headers['Allow'] = "HEAD, OPTIONS, GET"  # This line is important
+    #     return response
+
+    # GET request logic (for product fetching)
     try:
-        # Fetch all products from the 'adebeo_products' collection
+        username = request.user
         products_cursor = db['adebeo_products'].find()
-        
-        # Filter only valid products where 'prodisEnabled' is True
-        valid_products = []
-        for product in products_cursor:
-            if product.get("prodisEnabled"):
-                valid_products.append(product)
-
-        # Convert ObjectId fields to strings for JSON serialization
+        valid_products = [product for product in products_cursor if product.get("prodisEnabled")]
         valid_products = convert_objectid_to_str(valid_products)
-        
         return jsonify({"data": valid_products, "total": len(valid_products)})
-
     except Exception as e:
-        # Log the error
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
 
 #add new adebeo_products, check for unique product code
 @app.route("/create_adebeo_products", methods=["POST"])
