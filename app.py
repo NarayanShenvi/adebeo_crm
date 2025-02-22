@@ -18,10 +18,15 @@ from bson.errors import InvalidId
 import logging
 from zoneinfo import ZoneInfo
 import pytz
+from flask import send_from_directory
 
+persistent_disk_path = '/mnt/render/persistent/pdf/'  # Directory to store PDFs
 # Set up logging before creating the app or defining routes
-# logging.basicConfig(level=logging.DEBUG,  # Set log level to DEBUG
-#                     format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.DEBUG,  # Make sure the level is DEBUG
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]  # Outputs logs to the console
+) 
 
 # app = Flask(__name__)
 app = Flask(__name__, static_folder='static')
@@ -816,8 +821,166 @@ def add_comments():
     })
     return jsonify(id=str(comment.inserted_id), message="user comment added sucessfully.")
 
+# Function to generate quote number
+def generate_quote_number():
+    current_year = datetime.now().year
+    year_str = str(current_year)
+    prefix = "AD"
+    
+    # Query to find the last quote number for the current year
+    last_quote_cursor = adebeo_quotes_collection.find({"quote_number": {"$regex": f"^{prefix}{year_str}Q"}}).sort("quote_number", -1).limit(1)
+
+    # Convert the cursor to a list and check the length
+    last_quote = list(last_quote_cursor)
+
+    if len(last_quote) > 0:
+        last_quote_number = last_quote[0]['quote_number']
+        last_num = int(last_quote_number[-2:])  # Extract the last two digits (QXX format)
+    else:
+        last_num = 0  # If no quotes exist, start from 0
+    
+    # Increment and pad the number
+    new_quote_number = f"{prefix}{year_str}Q{str(last_num + 1).zfill(2)}"
+    return new_quote_number
+
+
 #################################### this section is for PDF generation ###########################################
 # Endpoint to create and store quote
+# @app.route('/adebeo_create_quotes', methods=['POST'])
+# @login_required
+# def adebeo_create_quotes():
+#     try:
+#         # Getting the username of the logged-in user
+#         username = request.user
+
+#         # Ensure required fields are present in the incoming request
+#         required_fields = ["customer_id", "quoteTag", "items", "gross_total"]
+#         missing_fields = [field for field in required_fields if not request.json.get(field)]
+#         if missing_fields:
+#             return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
+
+#     # Get customer details
+#         customer_id = request.json.get("customer_id")
+#         try:
+#             # Attempt to match customer_id as ObjectId
+#             customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+#         except InvalidId:
+#             # Fallback to string-based match
+#             customer = adebeo_customer_collection.find_one({"_id": customer_id})
+
+#         if not customer:
+#             return jsonify({"error": "Customer not found"}), 404
+
+#         # Convert ObjectId fields to strings for the response
+#         customer = convert_objectid_to_str(customer)
+
+#          # Generate the quote number (e.g., AD2024Q01)
+#         quote_number = generate_quote_number()
+
+#         # Prepare the quote data to insert into the database and send to the template
+#         quote = {
+#              "quote_number": quote_number,  # Add the generated quote number
+#             "customer_id": request.json.get("customer_id"),
+#             "insertDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
+#             "insertBy": username,
+#             "quoteTag": request.json.get("quoteTag"),
+#             "company_description": "Our company ABC Solutions specializes in delivering top-quality products and services tailored to your needs.",
+#             "product_description": "This product is designed to enhance your business operations with cutting-edge technology and ease of use.",
+#             "items": request.json.get("items"),
+#             "total_amount": request.json.get("gross_total"),
+#             "terms": request.json.get("terms")
+#         }
+
+#         # Log the data being received and the quote being created
+#         logging.debug("Received quote data: %s", quote)
+
+#         # Extract relevant fields to pass to the template
+
+#         quote_data = {
+#             "quote_number": quote["quote_number"],
+#             "date": quote["insertDate"].strftime('%Y-%m-%d'),
+#             "company_description": quote["company_description"],
+#             "customer_name": customer.get("companyName", "N/A"),
+#             "customer_address": customer.get("address", "N/A"),
+#             "customer_email": customer.get("primaryEmail", "N/A"),
+#             "customer_phone": customer.get("mobileNumber", "N/A"),
+#             "products": quote["items"],
+#             "terms": quote["terms"]
+#         }
+
+#         # Log the final data being passed to the template
+#         #logging.debug("Data passed to template: %s", quote_data)
+
+#         # Insert the quote into the database
+#         result = adebeo_quotes_collection.insert_one(quote)
+#         if not result.inserted_id:
+#             return jsonify({"error": "Quote not Generated"}), 404
+
+#         # Render the HTML for the quote using the template
+#         rendered_html = render_template(
+#             "quote_template2.html",
+#             quote_number=quote_data["quote_number"],
+#             date=quote_data["date"],
+#             company_description= quote_data["company_description"],
+#             customer_name=quote_data["customer_name"],
+#             customer_address=quote_data["customer_address"],
+#             customer_email=quote_data["customer_email"],
+#             customer_phone=quote_data["customer_phone"],
+#             products=quote_data["products"],
+#             terms=quote_data["terms"]
+#         )
+
+#         # # Log the HTML that will be converted to PDF
+#         # #logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+
+#         # # Ensure the PDF folder exists
+#         # pdf_folder = os.path.join(os.getcwd(), 'static', 'pdf')
+#         # os.makedirs(pdf_folder, exist_ok=True)
+
+#         # # Save the generated PDF in the static folder
+#         # pdf_file_path = os.path.join(pdf_folder, f"quote_{quote_data['quote_number']}.pdf")
+#         # HTML(string=rendered_html).write_pdf(pdf_file_path)
+
+#         # # Respond with success message and link to the generated PDF
+#         # response = {
+#         #     "message": "Quote successfully created!",
+#         #     "quote_id": str(result.inserted_id),
+#         #     "pdf_link": f"/static/pdf/quote_{quote_data['quote_number']}.pdf"
+#         # }
+
+#         # # Log the response data
+#         # #logging.debug("Response: %s", response)
+
+#         # return jsonify(response), 201
+
+#         # Log the HTML that will be converted to PDF
+#         logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+
+#         # Define the path to save the PDF on the Render persistent disk
+#         pdf_folder = '/mnt/render/persistent/pdf'  # Use persistent disk folder
+#         os.makedirs(pdf_folder, exist_ok=True)
+
+#         # Save the generated PDF in the persistent folder
+#         pdf_file_path = os.path.join(pdf_folder, f"quote_{quote_data['quote_number']}.pdf")
+#         HTML(string=rendered_html).write_pdf(pdf_file_path)
+
+#         # Respond with success message and link to the generated PDF
+#         response = {
+#             "message": "Quote successfully created!",
+#             "quote_id": str(result.inserted_id),
+#             "pdf_link": f"/static/pdf/quote_{quote_data['quote_number']}.pdf"
+#         }
+
+#         # Log the response data
+#         logging.debug("Response: %s", response)
+
+#         return jsonify(response), 201
+
+#     except Exception as e:
+#         # Log the error for troubleshooting
+#         logging.error("Error creating quote: %s", str(e))
+#         return jsonify({"error": str(e)}), 500
+
 @app.route('/adebeo_create_quotes', methods=['POST'])
 @login_required
 def adebeo_create_quotes():
@@ -831,25 +994,26 @@ def adebeo_create_quotes():
         if missing_fields:
             return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
 
-    # Get customer details
+        # Get customer details
         customer_id = request.json.get("customer_id")
         try:
-            # Attempt to match customer_id as ObjectId
             customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
         except InvalidId:
-            # Fallback to string-based match
             customer = adebeo_customer_collection.find_one({"_id": customer_id})
 
         if not customer:
             return jsonify({"error": "Customer not found"}), 404
 
-        # Convert ObjectId fields to strings for the response
         customer = convert_objectid_to_str(customer)
 
-        # Prepare the quote data to insert into the database and send to the template
+        # Generate the quote number
+        quote_number = generate_quote_number()
+
+        # Prepare the quote data
         quote = {
+            "quote_number": quote_number,
             "customer_id": request.json.get("customer_id"),
-            "insertDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
+            "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")),
             "insertBy": username,
             "quoteTag": request.json.get("quoteTag"),
             "company_description": "Our company ABC Solutions specializes in delivering top-quality products and services tailored to your needs.",
@@ -859,13 +1023,11 @@ def adebeo_create_quotes():
             "terms": request.json.get("terms")
         }
 
-        # Log the data being received and the quote being created
         logging.debug("Received quote data: %s", quote)
 
-        # Extract relevant fields to pass to the template
-
+        # Extract relevant fields
         quote_data = {
-            "quote_number": quote["quoteTag"],
+            "quote_number": quote["quote_number"],
             "date": quote["insertDate"].strftime('%Y-%m-%d'),
             "company_description": quote["company_description"],
             "customer_name": customer.get("companyName", "N/A"),
@@ -876,20 +1038,19 @@ def adebeo_create_quotes():
             "terms": quote["terms"]
         }
 
-        # Log the final data being passed to the template
-        #logging.debug("Data passed to template: %s", quote_data)
+        logging.debug("Data passed to template: %s", quote_data)
 
         # Insert the quote into the database
         result = adebeo_quotes_collection.insert_one(quote)
         if not result.inserted_id:
             return jsonify({"error": "Quote not Generated"}), 404
 
-        # Render the HTML for the quote using the template
+        # Generate the HTML for the quote using the template
         rendered_html = render_template(
             "quote_template2.html",
             quote_number=quote_data["quote_number"],
             date=quote_data["date"],
-            company_description= quote_data["company_description"],
+            company_description=quote_data["company_description"],
             customer_name=quote_data["customer_name"],
             customer_address=quote_data["customer_address"],
             customer_email=quote_data["customer_email"],
@@ -898,16 +1059,34 @@ def adebeo_create_quotes():
             terms=quote_data["terms"]
         )
 
-        # Log the HTML that will be converted to PDF
-        #logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+        logging.debug("Rendered HTML: %s", rendered_html[:500])
 
-        # Ensure the PDF folder exists
-        pdf_folder = os.path.join(os.getcwd(), 'static', 'pdf')
-        os.makedirs(pdf_folder, exist_ok=True)
+        # Local file save (for testing)
+        #local_pdf_folder = './static/pdf'
+        #os.makedirs(local_pdf_folder, exist_ok=True)
+        #local_pdf_file_path = os.path.join(local_pdf_folder, f"quote_{quote_data['quote_number']}.pdf")
+        #try:
+        #    HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+        #    logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        #except Exception as e:
+        #    logging.error(f"Error saving local PDF: {str(e)}")
 
-        # Save the generated PDF in the static folder
-        pdf_file_path = os.path.join(pdf_folder, f"quote_{quote_data['quote_number']}.pdf")
-        HTML(string=rendered_html).write_pdf(pdf_file_path)
+        # Remote file save (on Render persistent disk)
+        remote_pdf_folder = '/mnt/render/persistent/pdf'
+        os.makedirs(remote_pdf_folder, exist_ok=True)
+        remote_pdf_file_path = os.path.join(remote_pdf_folder, f"quote_{quote_data['quote_number']}.pdf")
+
+        # Log the file path to ensure it's correct
+        logging.debug(f"Attempting to save remote PDF to: {remote_pdf_file_path}")
+
+        try:
+            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+            if os.path.exists(remote_pdf_file_path):
+                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+            else:
+                logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
 
         # Respond with success message and link to the generated PDF
         response = {
@@ -916,17 +1095,20 @@ def adebeo_create_quotes():
             "pdf_link": f"/static/pdf/quote_{quote_data['quote_number']}.pdf"
         }
 
-        # Log the response data
-        #logging.debug("Response: %s", response)
+        logging.debug("Response: %s", response)
 
         return jsonify(response), 201
 
     except Exception as e:
-        # Log the error for troubleshooting
         logging.error("Error creating quote: %s", str(e))
         return jsonify({"error": str(e)}), 500
 
-   
+
+
+@app.route('/static/pdf/<filename>')
+def serve_pdf(filename):
+    return send_from_directory('/mnt/render/persistent/pdf', filename)
+
 
 # Endpoint to generate a PDF for a specific quote
 # @app.route('/quotes/<quote_id>/pdf', methods=['GET'])

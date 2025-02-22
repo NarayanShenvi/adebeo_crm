@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quote Proposal</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1, h2, h3 { color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        .section { margin-bottom: 20px; }
+        .terms { margin-top: 30px; font-size: 0.9em; color: #555; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <h1>Quote Proposal</h1>
+    <p><strong>Quote Number:</strong> {{ quote_number }}</p>
+    <p><strong>Date:</strong> {{ date }}</p>
+
+    <!-- Customer Details -->
+    <div class="section">
+        <h2>Customer Details</h2>
+        <p><strong>Name:</strong> {{ customer_name }}</p>
+        <p><strong>Address:</strong> {{ customer_address }}</p>
+        <p><strong>Email:</strong> {{ customer_email }}</p>
+        <p><strong>Phone:</strong> {{ customer_phone }}</p>
+    </div>
+	 <!-- about Company -->
+	  <div class="section">
+	  <h2>About Adebeo</h2>
+	  <p>{{ company_description }}</p>
+	  </div>
+    <!-- Product Details -->
+    <div class="section">
+        <h2>Product Details</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Sl. No.</th>
+                    <th>Product Description</th>
+                    <th>Quantity</th>
+                    <th>Unit Price (₹)</th>
+                    <th>Gross Total (₹)</th>
+                    <th>CGST (₹)</th>
+                    <th>SGST (₹)</th>
+                    <th>Total Price (₹)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in products %}
+                <tr>
+                    <td>{{ item.sl_no }}</td>
+                    <td>{{ item.description }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ item.unit_price }}</td>
+                    <td>{{ item.gross_total }}</td>
+                    <td>{{ item.cgst }}</td>
+                    <td>{{ item.sgst }}</td>
+                    <td>{{ item.total_price }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Terms and Conditions -->
+    <div class="terms">
+        <h3>Terms and Conditions</h3>
+        <p>{{ terms }}</p>
+    </div>
+</body>
+</html>
