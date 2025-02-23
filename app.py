@@ -1173,21 +1173,30 @@ def get_quotes():
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
 
+        # Log pagination values
+        logging.debug(f"Pagination - Page: {page}, Per Page: {per_page}")
+
         # Query the quotes from the database, ordered by insertDate descending
+        logging.debug("Querying quotes collection")
         quotes_cursor = adebeo_quotes_collection.find().sort("insertDate", -1)
-        
+
         # Paginate the quotes
         quotes_cursor = quotes_cursor.skip((page - 1) * per_page).limit(per_page)
 
         # Convert ObjectId fields to strings and prepare the quote data
         quotes = []
         for quote in quotes_cursor:
+            logging.debug(f"Quote data: {quote}")  # Log each quote data
+            
+            # Use pdf_filename from the database for the correct PDF link
+            pdf_filename = quote.get("pdf_filename", "")  # Default to empty string if not found
+            
             quote_data = {
                 "quote_id": str(quote["_id"]),
                 "quote_date": quote["insertDate"].strftime('%Y-%m-%d'),
                 "quote_tag": quote["quoteTag"],
                 "total_price": quote["total_amount"],
-                "pdf_link": f"/static/pdf/{quote['pdf_filename']}"  # Use pdf_filename stored in the DB
+                "pdf_link": f"/static/pdf/{pdf_filename}"  # Use the correct filename
             }
             quotes.append(quote_data)
 
@@ -1206,8 +1215,9 @@ def get_quotes():
         return jsonify(response), 200
 
     except Exception as e:
-        logging.error("Error fetching quotes: %s", str(e))
+        logging.error("Error fetching quotes: %s", str(e))  # Log error
         return jsonify({"error": "Error fetching quotes"}), 500
+
 
 @app.route('/static/pdf/<filename>')
 def serve_pdf(filename):
