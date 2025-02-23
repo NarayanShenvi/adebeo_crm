@@ -1221,8 +1221,16 @@ def get_quotes():
 
 @app.route('/static/pdf/<filename>')
 def serve_pdf(filename):
-    # Serve the PDF file from the specified directory on the server
-    return send_from_directory('/mnt/render/persistent/pdf', filename)
+    try:
+        logging.debug(f"Attempting to serve file: {filename}")
+        return send_from_directory('/mnt/render/persistent/pdf', filename)
+    except FileNotFoundError:
+        logging.error(f"File {filename} not found in /mnt/render/persistent/pdf.")
+        return jsonify({"error": f"File {filename} not found"}), 404
+    except Exception as e:
+        logging.error(f"Error serving file {filename}: {str(e)}")
+        return jsonify({"error": f"Failed to serve file: {str(e)}"}), 500
+
 
 
 
