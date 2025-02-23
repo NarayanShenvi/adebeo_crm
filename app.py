@@ -1173,13 +1173,18 @@ def get_quotes():
         # Get pagination parameters from the request (default to page 1, 10 quotes per page)
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
+        
+        # Get customer_id from the request args (make sure it's provided)
+        customer_id = request.args.get('customer_id')
+        if not customer_id:
+            return jsonify({"error": "customer_id is required"}), 400
 
-        # Log pagination values
-        logging.debug(f"Pagination - Page: {page}, Per Page: {per_page}")
+        # Log pagination and customer_id values
+        logging.debug(f"Pagination - Page: {page}, Per Page: {per_page}, Customer ID: {customer_id}")
 
-        # Query the quotes from the database, ordered by insertDate descending
+        # Query the quotes from the database, filtered by customer_id, ordered by insertDate descending
         logging.debug("Querying quotes collection")
-        quotes_cursor = adebeo_quotes_collection.find().sort("insertDate", -1)
+        quotes_cursor = adebeo_quotes_collection.find({"customer_id": customer_id}).sort("insertDate", -1)
 
         # Paginate the quotes
         quotes_cursor = quotes_cursor.skip((page - 1) * per_page).limit(per_page)
@@ -1203,8 +1208,8 @@ def get_quotes():
             }
             quotes.append(quote_data)
 
-        # Get total count of quotes for pagination (use to calculate number of pages)
-        total_quotes = adebeo_quotes_collection.count_documents({})
+        # Get total count of quotes for this customer (use to calculate number of pages)
+        total_quotes = adebeo_quotes_collection.count_documents({"customer_id": customer_id})
         total_pages = (total_quotes + per_page - 1) // per_page  # ceiling division for pages
 
         # Prepare the response
