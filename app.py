@@ -1034,7 +1034,7 @@ def adebeo_create_quotes():
     try:
         # Getting the username of the logged-in user
         username = request.user
-
+        base_url = 'https://adebeo-crm1.onrender.com/static/pdf' 
         # Ensure required fields are present in the incoming request
         required_fields = ["customer_id", "quoteTag", "items", "gross_total"]
         missing_fields = [field for field in required_fields if not request.json.get(field)]
@@ -1070,7 +1070,8 @@ def adebeo_create_quotes():
             "product_description": "This product is designed to enhance your business operations with cutting-edge technology and ease of use.",
             "items": request.json.get("items"),
             "total_amount": request.json.get("gross_total"),
-            "terms": request.json.get("terms")
+            "terms": request.json.get("terms"),
+            "base_url":base_url
         }
 
         # Log the data being received and the quote being created
@@ -1196,7 +1197,8 @@ def get_quotes():
                 "quote_date": quote["insertDate"].strftime('%Y-%m-%d'),
                 "quote_tag": quote["quoteTag"],
                 "total_price": quote["total_amount"],
-                "pdf_link": f"/static/pdf/{pdf_filename}"  # Use the correct filename
+                "pdf_link": f"/static/pdf/{pdf_filename}",  # Use the correct filename
+                "base_url":quote["base_url"]
             }
             quotes.append(quote_data)
 
