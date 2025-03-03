@@ -21,7 +21,7 @@ import pytz
 from flask import send_from_directory
 import uuid
 
-persistent_disk_path = '/mnt/render/persistent/pdf/'  # Directory to store PDFs
+
 # Set up logging before creating the app or defining routes
 logging.basicConfig(
     level=logging.DEBUG,  # Make sure the level is DEBUG
@@ -56,6 +56,8 @@ adebeo_user_funnel=db['adebeo_funnel']
 adebeo_customer_comments=db['adebeo_customer_comments']
 adebeo_products=db['adebeo_products']
 adebeo_quotes_collection=db['adebeo_quotes']
+adebeo_invoice_collection=db['adebeo_invoices']
+adebeo_performa_collection=db['adebeo_performas']
 
 # Configure logging
 # logging.basicConfig(
@@ -1203,6 +1205,7 @@ def get_quotes():
                 "quote_date": quote["insertDate"].strftime('%Y-%m-%d'),
                 "quote_tag": quote.get("quoteTag", ""),
                 "total_price": quote.get("total_amount", 0),
+                "items":quote.get("items",""),
                 "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
                 "base_url": base_url  # Ensure this is never None
             }
@@ -1238,6 +1241,472 @@ def serve_pdf(filename):
     except Exception as e:
         logging.error(f"Error serving file {filename}: {str(e)}")
         return jsonify({"error": f"Failed to serve file: {str(e)}"}), 500
+#############  this section for Invoices ###################
+# Function to generate a unique invoice number
+def generate_invoice_number():
+    current_year = datetime.now().year
+    year_str = str(current_year)
+    prefix = "AD"
+    
+    # Query to find the last invoice number for the current year
+    last_invoice_cursor = adebeo_invoice_collection.find({"invoice_number": {"$regex": f"^{prefix}{year_str}I"}}).sort("invoice_number", -1).limit(1)
+    
+    # Convert the cursor to a list and check the length
+    last_invoice = list(last_invoice_cursor)
+
+    if len(last_invoice) > 0:
+        last_invoice_number = last_invoice[0]['invoice_number']
+        
+        # Extract the part after 'I' and ensure it contains only digits
+        last_num_str = last_invoice_number[-4:]  # Extract the last 4 characters (after 'I')
+        
+        # Ensure it's numeric before converting
+        if last_num_str.isdigit():
+            last_num = int(last_num_str)  # Convert to integer
+        else:
+            last_num = 0  # Fallback in case the last number part is not valid
+    else:
+        last_num = 0  # If no invoice exists, start from 0
+    
+    # Increment the last number and format it properly (up to 9999 invoices)
+    new_invoice_number = f"{prefix}{year_str}I{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
+    
+    return new_invoice_number
+
+# Function to generate a unique performa number
+def generate_performa_number():
+    current_year = datetime.now().year
+    year_str = str(current_year)
+    prefix = "AD"
+    
+    # Query to find the last invoice number for the current year
+    last_performa_cursor = adebeo_performa_collection.find({"performa_number": {"$regex": f"^{prefix}{year_str}P"}}).sort("performa_number", -1).limit(1)
+    
+    # Convert the cursor to a list and check the length
+    last_performa = list(last_performa_cursor)
+
+    if len(last_performa) > 0:
+        last_performa_number = last_performa[0]['performa_number']
+        
+        # Extract the part after 'I' and ensure it contains only digits
+        last_num_str = last_performa_number[-4:]  # Extract the last 4 characters (after 'I')
+        
+        # Ensure it's numeric before converting
+        if last_num_str.isdigit():
+            last_num = int(last_num_str)  # Convert to integer
+        else:
+            last_num = 0  # Fallback in case the last number part is not valid
+    else:
+        last_num = 0  # If no invoice exists, start from 0
+    
+    # Increment the last number and format it properly (up to 9999 invoices)
+    new_performa_number = f"{prefix}{year_str}P{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
+    
+    return new_performa_number    
+
+@app.route('/create_performa', methods=['POST'])
+@login_required
+def create_performa():
+    try:
+        # Getting the username of the logged-in user
+        username = request.user
+        base_url = 'https://adebeo-crm1.onrender.com'
+
+        # Get the quote_number and quote_tag from the request (if any)
+        quote_number = request.json.get("quote_number")
+        quote_tag = request.json.get("quote_tag")
+        
+        # If no quote_number and quote_tag are provided, check for required fields (manual invoice creation)
+        if not quote_number or not quote_tag:
+            required_fields = ["customer_id", "items", "gross_total"]
+            missing_fields = [field for field in required_fields if not request.json.get(field)]
+            if missing_fields:
+                return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
+
+        # If quote_number and quote_tag are provided, fetch the quote details
+        if quote_number and quote_tag:
+            quote = adebeo_quotes_collection.find_one({
+                "quote_number": quote_number,
+                "quoteTag": quote_tag
+            })
+
+            if not quote:
+                return jsonify({"error": "Quote not found"}), 404
+            # Extract relevant fields from the quote
+            customer_id = quote["customer_id"]
+            items = quote["items"]
+            total_amount = quote["total_amount"]
+            terms = quote["terms"]
+            preformaTag = quote["quoteTag"] 
+        else:
+            # If no quote_number or quote_tag, fetch the invoice details from the payload
+            customer_id = request.json.get("customer_id")
+            items = request.json.get("items")
+            total_amount = request.json.get("gross_total")
+            terms = request.json.get("terms")
+            preformaTag = request.json.get("preformaTag")
+
+        # Get customer details
+        try:
+            # Attempt to match customer_id as ObjectId
+            customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+        except InvalidId:
+            # Fallback to string-based match
+            customer = adebeo_customer_collection.find_one({"_id": customer_id})
+
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+
+        # Convert ObjectId fields to strings for the response
+        customer = convert_objectid_to_str(customer)
+
+        # Generate the invoice number (e.g., AD2025I01)
+        performa_number = generate_performa_number()
+
+        # Prepare the invoice data to insert into the database and send to the template
+        performa = {
+            "performa_number": performa_number,
+            "customer_id": customer_id,
+            "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")),
+            "insertBy": username,
+            "items": items,
+            "total_amount": total_amount,
+            "terms": terms,
+            "base_url": base_url,
+            "preformaTag":preformaTag
+        }
+
+        # Log the data being received and the invoice being created
+        logging.debug("Received performa data: %s", performa)
+
+        # Extract relevant fields to pass to the template
+        performa_data = {
+            "performa_number": performa["performa_number"],
+            "date": performa["insertDate"].strftime('%Y-%m-%d'),
+            "company_description": "Our company ABC Solutions specializes in delivering top-quality products and services tailored to your needs.",
+            "customer_name": customer.get("companyName", "N/A"),
+            "customer_address": customer.get("address", "N/A"),
+            "customer_email": customer.get("primaryEmail", "N/A"),
+            "customer_phone": customer.get("mobileNumber", "N/A"),
+            "products": performa["items"],
+            "terms": performa["terms"],
+            "preformaTag":preformaTag
+        }
+
+        # Log the final data being passed to the template
+        logging.debug("Data passed to template: %s", performa_data)
+
+        # Insert the invoice into the database
+        result = adebeo_performa_collection.insert_one(performa)
+        if not result.inserted_id:
+            return jsonify({"error": "Invoice not generated"}), 404
+
+        # Generate the HTML for the invoice using the template
+        rendered_html = render_template(
+            "invoice_template.html",  # Create a similar template like "quote_template2.html"
+            performa_number=performa_data["performa_number"],
+            date=performa_data["date"],
+            company_description=performa_data["company_description"],
+            customer_name=performa_data["customer_name"],
+            customer_address=performa_data["customer_address"],
+            customer_email=performa_data["customer_email"],
+            customer_phone=performa_data["customer_phone"],
+            products=performa_data["products"],
+            terms=performa_data["terms"],
+            preformaTag= performa_data["preformaTag"]
+        )
+
+        # Log the HTML that will be converted to PDF
+        logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+
+        # Generate a random UUID for the file name
+        pdf_filename = f"performa_{uuid.uuid4()}.pdf"
+
+        # Local file save (for debugging purposes)
+        local_pdf_folder = './static/pdf'  # Local folder for testing
+        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        try:
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving local PDF: {str(e)}")
+
+        # Remote file save (on Render persistent disk)
+        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+        try:
+            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+            # Check if the file was saved successfully
+            if os.path.exists(remote_pdf_file_path):
+                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+            else:
+                logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+
+        # Add the pdf_filename to the invoice data before inserting into the database
+        adebeo_performa_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"pdf_filename": pdf_filename}}
+        )
+
+        # Respond with success message and link to the generated PDF
+        response = {
+            "message": "Performa successfully created!",
+            "performa_id": str(result.inserted_id),
+            "pdf_link": f"/static/pdf/{pdf_filename}"  # Local path for now
+        }
+
+        # Log the response data
+        logging.debug("Response: %s", response)
+
+        return jsonify(response), 201
+
+    except Exception as e:
+        # Log the error for troubleshooting
+        logging.error("Error creating Performa invoice: %s", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/create_invoice', methods=['POST'])
+@login_required
+def create_invoice():
+    try:
+        # Getting the username of the logged-in user
+        username = request.user
+        base_url = 'https://adebeo-crm1.onrender.com'
+
+        # Get the proforma_id and proforma_tag from the request (these are required for invoice creation)
+        proforma_id = request.json.get("proforma_id")
+        proforma_tag = request.json.get("proforma_tag")
+
+        # Ensure proforma_id and proforma_tag are provided
+        if not proforma_id or not proforma_tag:
+            return jsonify({"error": "Proforma ID and Proforma Tag are required to create an invoice."}), 400
+
+        # Fetch the proforma details using proforma_id and proforma_tag  
+        proforma = adebeo_performa_collection.find_one({
+            "proforma_number": proforma_id,
+            "proforma_tag": proforma_tag
+        })
+
+        if not proforma:
+            return jsonify({"error": "Proforma not found. Invoice cannot be created."}), 404
+
+        # Extract customer_id, items, total_amount, and terms from the Proforma
+        customer_id = proforma["customer_id"]
+        items = proforma["items"]
+        total_amount = proforma["total_amount"]
+        terms = proforma["terms"]
+
+        # Get customer details from the customer_id
+        try:
+            customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+        except InvalidId:
+            customer = adebeo_customer_collection.find_one({"_id": customer_id})
+
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+
+        # Convert ObjectId fields to strings for the response
+        customer = convert_objectid_to_str(customer)
+
+        # Generate the invoice number (e.g., AD2025I01)
+        invoice_number = generate_invoice_number()
+
+        # Prepare the invoice data to insert into the database
+        invoice = {
+            "invoice_number": invoice_number,
+            "customer_id": customer_id,
+            "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")),
+            "insertBy": username,
+            "items": items,
+            "total_amount": total_amount,
+            "terms": terms,
+            "base_url": base_url
+        }
+
+        # Log the data being received and the invoice being created
+        logging.debug("Received invoice data: %s", invoice)
+
+        # Extract relevant fields to pass to the template
+        invoice_data = {
+            "invoice_number": invoice["invoice_number"],
+            "date": invoice["insertDate"].strftime('%Y-%m-%d'),
+            "company_description": "Our company ABC Solutions specializes in delivering top-quality products and services tailored to your needs.",
+            "customer_name": customer.get("companyName", "N/A"),
+            "customer_address": customer.get("address", "N/A"),
+            "customer_email": customer.get("primaryEmail", "N/A"),
+            "customer_phone": customer.get("mobileNumber", "N/A"),
+            "products": invoice["items"],
+            "terms": invoice["terms"]
+        }
+
+        # Log the final data being passed to the template
+        logging.debug("Data passed to template: %s", invoice_data)
+
+        # Insert the invoice into the database
+        result = adebeo_invoice_collection.insert_one(invoice)
+        if not result.inserted_id:
+            return jsonify({"error": "Invoice not generated"}), 404
+
+        # Generate the HTML for the invoice using the template
+        rendered_html = render_template(
+            "invoice_template.html",  # Create a similar template like "quote_template2.html"
+            invoice_number=invoice_data["invoice_number"],
+            date=invoice_data["date"],
+            company_description=invoice_data["company_description"],
+            customer_name=invoice_data["customer_name"],
+            customer_address=invoice_data["customer_address"],
+            customer_email=invoice_data["customer_email"],
+            customer_phone=invoice_data["customer_phone"],
+            products=invoice_data["products"],
+            terms=invoice_data["terms"]
+        )
+
+        # Log the HTML that will be converted to PDF
+        logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+
+        # Generate a random UUID for the file name
+        pdf_filename = f"invoice_{uuid.uuid4()}.pdf"
+
+        # Local file save (for debugging purposes)
+        local_pdf_folder = './static/pdf'  # Local folder for testing
+        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        try:
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving local PDF: {str(e)}")
+
+        # Remote file save (on Render persistent disk)
+        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+        try:
+            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+            # Check if the file was saved successfully
+            if os.path.exists(remote_pdf_file_path):
+                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+            else:
+                logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+
+        # Add the pdf_filename to the invoice data before inserting into the database
+        adebeo_invoice_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"pdf_filename": pdf_filename}}
+        )
+
+        # Respond with success message and link to the generated PDF
+        response = {
+            "message": "Invoice successfully created!",
+            "invoice_id": str(result.inserted_id),
+            "pdf_link": f"/static/pdf/{pdf_filename}"  # Local path for now
+        }
+
+        # Log the response data
+        logging.debug("Response: %s", response)
+
+        return jsonify(response), 201
+
+    except Exception as e:
+        # Log the error for troubleshooting
+        logging.error("Error creating invoice: %s", str(e))
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get_performas', methods=['GET'])
+def get_performas():
+    try:
+        # Get query parameters: customer_id, page, per_page
+        customer_id = request.args.get("customer_id")
+        page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+        limit = int(request.args.get("per_page", 10))  # Default to 10 performas per page
+
+        # Ensure pagination values are valid
+        if page < 1 or limit < 1:
+            return jsonify({"error": "Invalid page or per_page value"}), 400
+
+        # Calculate the skip value for MongoDB query (pagination offset)
+        skip = (page - 1) * limit
+
+        # Query to find performas for the given customer_id, sorted by insertDate in descending order (latest first)
+        query = {"customer_id": customer_id}
+        performas_cursor = adebeo_performa_collection.find(query) \
+            .sort("insertDate", -1) \
+            .skip(skip) \
+            .limit(limit)
+
+        # Convert the cursor to a list of performas and apply the conversion of ObjectIds to strings
+        performas = [convert_objectid_to_str(performa) for performa in performas_cursor]
+
+        # Count total performas for the customer to calculate total pages
+        total_performas = adebeo_performa_collection.count_documents(query)
+        total_pages = (total_performas + limit - 1) // limit  # Ceiling division to calculate total pages
+
+        # Return the performas with pagination info
+        return jsonify({
+            "performas": performas,
+            "pagination": {
+                "page": page,
+                "per_page": limit,
+                "total_performas": total_performas,
+                "total_pages": total_pages
+            }
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching performas: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/get_invoices', methods=['GET'])
+@login_required
+def get_invoices():
+    # Get the customer ID from the request parameters
+    customer_id = request.args.get("customer_id")
+    
+    # Pagination parameters (page and limit)
+    page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+    limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
+
+    # Ensure pagination values are valid
+    if page < 1 or limit < 1:
+        return jsonify({"error": "Invalid page or limit"}), 400
+
+    # Calculate the skip value for MongoDB query (pagination offset)
+    skip = (page - 1) * limit
+
+    # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
+    invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
+        .sort("insertDate", -1) \
+        .skip(skip) \
+        .limit(limit)
+
+    # Convert the cursor to a list of invoices
+    invoices = list(invoices_cursor)
+
+    # Count total invoices for the customer to calculate total pages
+    total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
+    total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
+
+    # Return the invoices with pagination info
+    return jsonify({
+        "invoices": invoices,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total_invoices": total_invoices,
+            "total_pages": total_pages
+        }
+    }), 200
+
 
 
 
