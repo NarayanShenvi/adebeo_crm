@@ -59,6 +59,10 @@ adebeo_quotes_collection=db['adebeo_quotes']
 adebeo_invoice_collection=db['adebeo_invoices']
 adebeo_performa_collection=db['adebeo_performas']
 adebeo_purchase_order_collection =db['adebeo_purchaseOrders']
+invoice_collection = db['adebeo_invoices']
+orders_collection =db['adebeo_orders']
+customer_payments_collection = db['adebeo_payments']
+vendor_payments_collection =db['adebeo_vendor_payments']
 
 # Configure logging
 # logging.basicConfig(
@@ -1244,35 +1248,35 @@ def serve_pdf(filename):
         return jsonify({"error": f"Failed to serve file: {str(e)}"}), 500
 #############  this section for Invoices ###################
 # Function to generate a unique invoice number
-def generate_invoice_number():
-    current_year = datetime.now().year
-    year_str = str(current_year)
-    prefix = "AD"
+# def generate_invoice_number():
+#     current_year = datetime.now().year
+#     year_str = str(current_year)
+#     prefix = "AD"
     
-    # Query to find the last invoice number for the current year
-    last_invoice_cursor = adebeo_invoice_collection.find({"invoice_number": {"$regex": f"^{prefix}{year_str}I"}}).sort("invoice_number", -1).limit(1)
+#     # Query to find the last invoice number for the current year
+#     last_invoice_cursor = adebeo_invoice_collection.find({"invoice_number": {"$regex": f"^{prefix}{year_str}I"}}).sort("invoice_number", -1).limit(1)
     
-    # Convert the cursor to a list and check the length
-    last_invoice = list(last_invoice_cursor)
+#     # Convert the cursor to a list and check the length
+#     last_invoice = list(last_invoice_cursor)
 
-    if len(last_invoice) > 0:
-        last_invoice_number = last_invoice[0]['invoice_number']
+#     if len(last_invoice) > 0:
+#         last_invoice_number = last_invoice[0]['invoice_number']
         
-        # Extract the part after 'I' and ensure it contains only digits
-        last_num_str = last_invoice_number[-4:]  # Extract the last 4 characters (after 'I')
+#         # Extract the part after 'I' and ensure it contains only digits
+#         last_num_str = last_invoice_number[-4:]  # Extract the last 4 characters (after 'I')
         
-        # Ensure it's numeric before converting
-        if last_num_str.isdigit():
-            last_num = int(last_num_str)  # Convert to integer
-        else:
-            last_num = 0  # Fallback in case the last number part is not valid
-    else:
-        last_num = 0  # If no invoice exists, start from 0
+#         # Ensure it's numeric before converting
+#         if last_num_str.isdigit():
+#             last_num = int(last_num_str)  # Convert to integer
+#         else:
+#             last_num = 0  # Fallback in case the last number part is not valid
+#     else:
+#         last_num = 0  # If no invoice exists, start from 0
     
-    # Increment the last number and format it properly (up to 9999 invoices)
-    new_invoice_number = f"{prefix}{year_str}I{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
+#     # Increment the last number and format it properly (up to 9999 invoices)
+#     new_invoice_number = f"{prefix}{year_str}I{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
     
-    return new_invoice_number
+#     return new_invoice_number
 
 # Function to generate a unique performa number
 def generate_performa_number():
@@ -1739,6 +1743,38 @@ def generate_purchase_order_number():
     new_po_number = f"{prefix}{year_str}PO{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
 
     return new_po_number
+
+def generate_invoice_number():
+    current_year = datetime.now().year
+    year_str = str(current_year)
+    prefix = "AD"
+
+    # Query to find the last po_number for the current year
+    last_invoice_cursor = invoice_collection.find({
+        "invoice_number": {"$regex": f"^{prefix}{year_str}IN"}
+    }).sort("invoice_number", -1).limit(1)
+
+    # Convert the cursor to a list and check the length
+    last_invoice = list(last_invoice_cursor)
+
+    if len(last_invoice) > 0:
+        last_invoice_number = last_invoice[0]['invoice_number']
+        
+        # Extract the last 4 digits part after "PO" (e.g., 0001 from AD2025PO0001)
+        last_num_str = last_invoice_number[-4:]  # Extract the last 4 characters
+        
+        # Ensure it's numeric before converting
+        if last_num_str.isdigit():
+            last_num = int(last_num_str)  # Convert to integer
+        else:
+            last_num = 0  # Fallback in case the last number part is not valid
+    else:
+        last_num = 0  # If no purchase order exists, start from 0
+
+    # Increment the last number and format it properly (up to 9999 orders)
+    new_invoice_number = f"{prefix}{year_str}IN{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
+
+    return new_invoice_number    
  
 
 @app.route("/get_proformas_for_purchase_order", methods=["GET"])
@@ -1946,7 +1982,8 @@ def create_purchase_orders():
                 "purchase_price": po_data["purchase_price"],
                 "discount": po_data["discount"],
                 "total_amount": po_data["total_amount"],
-                "date": po_data["date"].strftime('%Y-%m-%d')
+                "date": po_data["date"].strftime('%Y-%m-%d'),
+                "proforma_id": performa_number,
             }
 
             rendered_html = render_template("purchase_order_template.html", **po_pdf_data)
@@ -1970,12 +2007,105 @@ def create_purchase_orders():
                 "pdf_link": f"/static/pdf/{pdf_filename}"
             })
 
-         # Step 2: Update the Proforma collection (purchase_status to True)
+            # this section is OrderBD this should be update at item level------------------------------------------
+            order_data = {
+                "order_number": po_number,
+                "customer_id": customer_id,
+                "vendor_name": po_data["vendor"],  # Assuming vendor_id is provided
+               # "product_id": item.get("product_id", "Unknown Product ID"),  # Assuming product_id is provided
+                "product_name":product_name,
+                "quantity": quantity,
+                "purchase_price": revised_purchase_price,
+                "total_amount": total_amount,
+                "status": "Pending",
+                "order_date": datetime.now(),
+                "expiry" :"", # Need to update
+                "payment_status": "Pending",  # Will be updated when payment happens
+                "mode" :"regular", #should come from PO
+                "type" : "new", #should come from PO 
+                "proforma_id": performa_number
+            }
+            orders_collection.insert_one(order_data)
+            # this section is OrderBD this should be update at item level------------------------------------------  
+            # this section is vendorPayment this should be update at item level------------------------------------------ 
+            vendor_payment_data = {
+                "order_number": po_number,
+                "vendor_name": po_data["vendor"],
+                "customer_id": customer_id,
+                "product_name":product_name,
+                "total_amount": total_amount,
+                "payment_date": datetime.now(),
+                "status": "Pending",
+                "proforma_id": performa_number
+            }
+            vendor_payments_collection.insert_one(vendor_payment_data)
+            # this section is vendorPayment this should be update at item level------------------------------------------
+        # this section is for generating Invoices--------------------------------------------------
+        invoice_number = generate_invoice_number()  # Implement your own invoice number generator
+        invoice_data = {
+            "invoice_number": invoice_number,
+            "customer_id": customer_id,
+            "customer_name": customer["companyName"],
+            "proforma_id": performa_number,  
+            "total_amount": total_amount,
+            "amount_due": total_amount,
+            "payment_status": "Pending",
+            "items":proforma["items"],
+            "invoice_date": datetime.now(),
+            "payment_method": "",  # You can update this when the payment is made
+            "payment_reference": "",
+            "due_date": None,  # Set the due date if necessary
+        }
+        # Save to Invoice DB
+        invoice_collection.insert_one(invoice_data)
+
+        invoice_pdf_data = {
+            "invoice_number": invoice_number,
+            "customer_name": customer["companyName"],
+            "invoice_date": datetime.now().strftime('%Y-%m-%d'),
+            "total_amount": total_amount,
+            "amount_due": total_amount,
+            "items": items  # Use all items from the proforma for the invoice
+        }
+
+        rendered_html = render_template("invoice_template.html", **invoice_pdf_data)
+
+        # Define PDF output path
+        local_pdf_folder = './static/pdf'
+        os.makedirs(local_pdf_folder, exist_ok=True)
+        pdf_filename = f"invoice_{invoice_number}.pdf"
+        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+
+        # Generate PDF from HTML
+        HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+
+        # Update the invoice record in DB with the path to the saved PDF
+        invoice_collection.update_one(
+            {"invoice_number": invoice_number},
+            {"$set": {"pdf_filename": f"/static/pdf/{pdf_filename}"}}
+        )
+        # this section is for generating Invoices--------------------------------------------------
+        ### customer Payment Initiate =========================================
+            # For customer payments
+        customer_payment_data = {
+            "customer_id": customer_id,
+            "invoice_number": invoice_number,
+            "total_amount": total_amount,
+            "invoice_date": datetime.now().strftime('%Y-%m-%d'),
+            "status": "inprog"
+            }
+        customer_payments_collection.insert_one(customer_payment_data)
+         ### customer Payment Initiate =========================================
+
+
+
+
+
+        # Update the Proforma collection (purchase_status to True)
         adebeo_performa_collection.update_one(
             {"performa_number": performa_number},  # Find Proforma by ID
             {"$set": {"purchase_status": True}}   # Set purchase_status to True
         )
-
         # Respond with the created POs and their download links
         return jsonify({
             "status": "success",
@@ -2000,7 +2130,7 @@ def get_purchase_orders():
     # Ensure the user is an admin
     if user_role != "admin":
         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
-        
+
     try:
         # Get query parameters
         page = int(request.args.get('page', 1))
@@ -2033,6 +2163,72 @@ def get_purchase_orders():
     except Exception as e:
         logging.error(f"Error fetching purchase orders: {str(e)}")
         return jsonify({"error": f"An error occurred while fetching purchase orders: {str(e)}"}), 500
+
+from bson import ObjectId, json_util
+from flask import Response, jsonify
+
+@app.route('/get_adebeo_orders', methods=['GET'])
+@login_required
+def get_adebeo_orders():
+    customer_id = request.args.get('customer_ID')  # Get customer_ID from query parameter
+
+    if not customer_id:
+        return jsonify({"error": "customer_ID is required"}), 400
+
+    try:
+        # Query the 'orders_collection' using the customer_ID and sort by product_name
+        orders_data = orders_collection.find({"customer_id": customer_id}).sort("product_name", 1)
+        
+        # Convert Mongo cursor to list and group orders
+        orders_list = []
+
+        for order in orders_data:
+            # Convert _id (ObjectId) to string for serialization
+            order['_id'] = str(order['_id'])
+            orders_list.append(order)
+
+        if not orders_list:
+            return jsonify({"message": "No orders found for this customer"}), 404
+        
+        # Group orders by product_name
+        grouped_orders = {}
+
+        for order in orders_list:
+            product_name = order.get('product_name')
+
+            # If the product_name is not in the grouped_orders dictionary, create a new list for it
+            if product_name not in grouped_orders:
+                grouped_orders[product_name] = []
+
+            # Add the order to the corresponding product_name group
+            proforma_id = order.get('proforma_id')
+
+            # Get Invoice PDF link if the proforma_id is available
+            if proforma_id:
+                # Query the invoice_collection with proforma_id to get the pdf_filename (Invoice PDF link)
+                invoice_data = invoice_collection.find_one({"proforma_id": proforma_id})
+
+                if invoice_data and 'pdf_filename' in invoice_data:  # Use pdf_filename from invoice collection
+                    order['Invoice_PDF_link'] = invoice_data['pdf_filename']
+                else:
+                    order['Invoice_PDF_link'] = None
+            else:
+                order['Invoice_PDF_link'] = None
+
+            # Add the order to the group for that product_name
+            grouped_orders[product_name].append(order)
+
+        # Return the grouped orders as a JSON response
+        return Response(json_util.dumps(grouped_orders), mimetype='application/json')
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
 
 ############################ Order DB update #################################
 
