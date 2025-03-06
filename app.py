@@ -58,6 +58,7 @@ adebeo_products=db['adebeo_products']
 adebeo_quotes_collection=db['adebeo_quotes']
 adebeo_invoice_collection=db['adebeo_invoices']
 adebeo_performa_collection=db['adebeo_performas']
+adebeo_purchase_order_collection =db['adebeo_purchaseOrders']
 
 # Configure logging
 # logging.basicConfig(
@@ -1706,7 +1707,341 @@ def get_invoices():
             "total_pages": total_pages
         }
     }), 200
+############################## Purchase Order Preparation ####################
+def generate_purchase_order_number():
+    current_year = datetime.now().year
+    year_str = str(current_year)
+    prefix = "AD"
 
+    # Query to find the last po_number for the current year
+    last_performa_cursor = adebeo_purchase_order_collection.find({
+        "po_number": {"$regex": f"^{prefix}{year_str}PO"}
+    }).sort("po_number", -1).limit(1)
+
+    # Convert the cursor to a list and check the length
+    last_performa = list(last_performa_cursor)
+
+    if len(last_performa) > 0:
+        last_performa_number = last_performa[0]['po_number']
+        
+        # Extract the last 4 digits part after "PO" (e.g., 0001 from AD2025PO0001)
+        last_num_str = last_performa_number[-4:]  # Extract the last 4 characters
+        
+        # Ensure it's numeric before converting
+        if last_num_str.isdigit():
+            last_num = int(last_num_str)  # Convert to integer
+        else:
+            last_num = 0  # Fallback in case the last number part is not valid
+    else:
+        last_num = 0  # If no purchase order exists, start from 0
+
+    # Increment the last number and format it properly (up to 9999 orders)
+    new_po_number = f"{prefix}{year_str}PO{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
+
+    return new_po_number
+ 
+
+@app.route("/get_proformas_for_purchase_order", methods=["GET"])
+@login_required
+def get_proformas():
+    username = request.user
+
+    claims = get_jwt()
+    user_role = claims.get("role") 
+    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+    # Ensure the user is an admin
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    try:
+        # Fetch Proformas where Purchase_status is False or missing
+        proformas = adebeo_performa_collection.find({
+            "$or": [{"purchase_status": False}, {"purchase_status": {"$exists": False}}]
+        })
+
+        if not proformas:
+            logging.error("No proformas found in the collection.")
+        
+        proforma_list = []
+
+        # Loop through each proforma to get the associated customer name
+        for proforma in proformas:
+            customer_id = proforma.get("customer_id")
+            if not customer_id:
+                logging.warning(f"Proforma {proforma.get('performa_number')} is missing 'customer_id'. Skipping this proforma.")
+                continue
+
+            try:
+                # Convert customer_id to ObjectId before querying the customer collection
+                customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+
+                if customer is None:
+                    logging.warning(f"Customer with ID {customer_id} not found for proforma {proforma.get('performa_number')}.")
+                    continue
+
+            except Exception as e:
+                logging.error(f"Error converting customer_id '{customer_id}' to ObjectId or fetching customer: {e}")
+                continue  # Skip this proforma on error
+
+            # Initialize proforma info
+            proforma_info = {
+                "proforma_id": proforma.get("performa_number", "Unknown"),
+                "proforma_tag": proforma.get("preformaTag", "Unknown"),
+                "customer_name": customer.get("companyName", "Unknown"),
+                "items": []
+            }
+
+            # Loop through items in the proforma to fetch product details
+            for item in proforma.get("items", []):
+                # Get the product_id, which corresponds to the product's _id in the product collection
+                product_id = item.get("product_id")
+                if not product_id:
+                    logging.warning(f"Item in proforma {proforma.get('performa_number')} is missing 'product_id'. Skipping this item.")
+                    continue
+
+                try:
+                    # Fetch the product from the adebeo_products collection using the ObjectId
+                    product = adebeo_products.find_one({"_id": ObjectId(product_id)})
+
+                    if product is None:
+                        logging.warning(f"Product with ID {product_id} not found for item in proforma {proforma.get('performa_number')}.")
+                        continue
+
+                    # Add product details to the item
+                    item_info = {
+                        "description": product.get("ProductDisplay", "No description"),  # Product display name
+                        "product_name": product.get("productName", "Unknown Product"),
+                        "product_code": product.get("productCode", "Unknown Code"),
+                        "company_name": product.get("ProductCompanyName", "Unknown Company"),
+                        "contact": product.get("Contact", "Unknown Contact"),
+                        "address": product.get("address", "No address"),
+                        "company_gstin": product.get("companyGstin", "No GSTIN"),
+                        "primary_locality": product.get("primaryLocality", "No locality"),
+                        "secondary_locality": product.get("secondaryLocality", "No locality"),
+                        "city": product.get("city", "Unknown City"),
+                        "state": product.get("state", "Unknown State"),
+                        "pincode": product.get("pincode", "No Pincode"),
+                        "email": product.get("email", "No email"),
+                        "sales_code": product.get("salesCode", "No sales code"),
+                        "purchase_cost": product.get("purchaseCost", 0),  # purchaseCost field from the product
+                        "quantity": item.get("quantity", 0),
+                        "sub_total": item.get("sub_total", 0),
+                        "unit_price": item.get("unit_price", 0),
+                        "discount": item.get("discount", 0),
+                        "dr_status": item.get("dr_status", "")
+                    }
+
+                    # Append item with full product details to the proforma's items list
+                    proforma_info["items"].append(item_info)
+
+                except Exception as e:
+                    logging.error(f"Error fetching product with ID '{product_id}' for item in proforma {proforma.get('performa_number')}: {e}")
+                    continue  # Skip this item if there’s an error fetching the product
+
+            # Append this proforma's details to the result list
+            proforma_list.append(proforma_info)
+
+        # If no proformas were found, log the info
+        if not proforma_list:
+            logging.info("No proformas with valid items and products were found.")
+
+        return jsonify(proforma_list)
+
+    except Exception as e:
+        logging.error(f"An error occurred while fetching proformas: {e}")
+        return jsonify({"error": "Internal Server Error. Please try again later."}), 500
+
+@app.route("/create_purchase_orders", methods=["POST"])
+@login_required
+def create_purchase_orders():
+    username = request.user
+    
+    claims = get_jwt()
+    user_role = claims.get("role") 
+    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+    # Ensure the user is an admin
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    try:
+        username = request.user
+        base_url = 'https://adebeo-crm1.onrender.com'
+
+        # Get the proforma_id and items from the request
+        performa_number = request.json.get("proforma_id")
+        items = request.json.get("items")  # List of items with productID
+
+        if not performa_number:
+            return jsonify({"error": "Proforma ID is required"}), 400
+
+        if not items:
+            return jsonify({"error": "Items list is empty or missing"}), 400
+
+        # Fetch Proforma from the database
+        proforma = adebeo_performa_collection.find_one({"performa_number": performa_number})
+
+        if not proforma:
+            return jsonify({"error": "Proforma not found"}), 404
+
+        # Fetch customer details
+        customer_id = proforma.get("customer_id", "0")
+        customer = None
+
+        if customer_id != "0":
+            customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+
+        # Generate Purchase Orders for each item in the Proforma
+        created_pois = []
+        for item in items:
+            # Extract required product information
+            product_name = item.get("description", "Unknown")
+            vendor = item.get("company_name", "Unknown Vendor")
+            vendor_address = item.get("address", "Unknown Address")
+            purchase_price = float(item.get("purchase_cost", 0))
+
+            # Calculate the total amount (assuming the discount field is already available)
+            discount = float(item.get("discount", 0))
+            revised_purchase_price = purchase_price - discount
+            quantity = int(item.get("quantity", 0))
+            total_amount = quantity * revised_purchase_price
+
+            po_number = generate_purchase_order_number()  # Implement your PO number generation logic
+            pdf_filename = f"purchase_order_{po_number}.pdf"
+
+            po_data = {
+                "po_number": po_number,
+                "customer_id": customer_id,
+                "customer_name": customer["companyName"],
+                "product_name": product_name,
+                "vendor": vendor,
+                "vendor_address": vendor_address,
+                "quantity": quantity,
+                "purchase_price": revised_purchase_price,
+                "total_amount": total_amount,
+                "date": datetime.now(ZoneInfo("Asia/Kolkata")),
+                "status": "Pending",  # Or set an initial status
+                "proforma_id": performa_number,
+                "discount": discount
+            }
+
+            # Save Purchase Order to the database
+            result = adebeo_purchase_order_collection.insert_one(po_data)
+
+            if not result.inserted_id:
+                return jsonify({"error": f"Failed to create Purchase Order for {product_name}"}), 500
+
+            # Generate PDF for each PO using the HTML template
+            po_pdf_data = {
+                "po_number": po_data["po_number"],
+                "customer_name": po_data["customer_name"],
+                "product_name": po_data["product_name"],
+                "vendor": po_data["vendor"],
+                "vendor_address": po_data["vendor_address"],
+                "quantity": po_data["quantity"],
+                "purchase_price": po_data["purchase_price"],
+                "discount": po_data["discount"],
+                "total_amount": po_data["total_amount"],
+                "date": po_data["date"].strftime('%Y-%m-%d')
+            }
+
+            rendered_html = render_template("purchase_order_template.html", **po_pdf_data)
+
+            # Generate PDF and save it
+            local_pdf_folder = './static/pdf'
+            os.makedirs(local_pdf_folder, exist_ok=True)
+            local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+
+            # Update the PO document with the PDF file path
+            adebeo_purchase_order_collection.update_one(
+                {"_id": result.inserted_id},
+                {"$set": {"pdf_filename": pdf_filename}}
+            )
+
+            # Collect the generated POs for response
+            created_pois.append({
+                "po_number": po_number,
+                "pdf_link": f"/static/pdf/{pdf_filename}"
+            })
+
+         # Step 2: Update the Proforma collection (purchase_status to True)
+        adebeo_performa_collection.update_one(
+            {"performa_number": performa_number},  # Find Proforma by ID
+            {"$set": {"purchase_status": True}}   # Set purchase_status to True
+        )
+
+        # Respond with the created POs and their download links
+        return jsonify({
+            "status": "success",
+            "message": "Purchase Orders created successfully!",
+            "purchase_orders": created_pois
+        }), 201
+
+    except Exception as e:
+        logging.error(f"Error creating Purchase Orders: {str(e)}")
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+@app.route("/get_purchase_orders", methods=["GET"])
+@login_required
+def get_purchase_orders():
+    username = request.user
+    
+    claims = get_jwt()
+    user_role = claims.get("role") 
+    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+    # Ensure the user is an admin
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+        
+    try:
+        # Get query parameters
+        page = int(request.args.get('page', 1))
+        rows_per_page = int(request.args.get('rows_per_page', 10))
+
+        # Validate the parameters
+        if page < 1 or rows_per_page < 1:
+            return jsonify({"error": "Invalid page or rows per page"}), 400
+
+        # Query to fetch purchase orders with pagination
+        skip = (page - 1) * rows_per_page
+        orders = adebeo_purchase_order_collection.find().skip(skip).limit(rows_per_page)
+        total_orders = adebeo_purchase_order_collection.count_documents({})
+        total_pages = (total_orders + rows_per_page - 1) // rows_per_page
+
+        # Convert orders to a list and serialize ObjectIds as strings
+        orders_list = []
+        for order in orders:
+            # Convert ObjectId fields to strings
+            order['_id'] = str(order['_id'])  # Convert ObjectId to string
+            orders_list.append(order)
+
+        return jsonify({
+            "orders": orders_list,
+            "page": page,
+            "total_orders": total_orders,
+            "total_pages": total_pages
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching purchase orders: {str(e)}")
+        return jsonify({"error": f"An error occurred while fetching purchase orders: {str(e)}"}), 500
+
+############################ Order DB update #################################
+
+############################ CxPayment DB update ############################
+
+########################### VxPayment DB update #############################
+
+
+############################ Invoice Preparation #############################
 
 
 
