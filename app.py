@@ -64,6 +64,7 @@ orders_collection =db['adebeo_orders']
 customer_payments_collection = db['adebeo_payments']
 vendor_payments_collection =db['adebeo_vendor_payments']
 
+
 # Configure logging
 # logging.basicConfig(
 #     filename='app.log',  # File to store logs
@@ -1408,7 +1409,7 @@ def create_performa():
 
         # Generate the HTML for the invoice using the template
         rendered_html = render_template(
-            "invoice_template.html",  # Create a similar template like "quote_template2.html"
+            "profoma_template.html",  # Create a similar template like "quote_template2.html"
             performa_number=performa_data["performa_number"],
             date=performa_data["date"],
             company_description=performa_data["company_description"],
@@ -2091,6 +2092,8 @@ def create_purchase_orders():
             "customer_id": customer_id,
             "invoice_number": invoice_number,
             "total_amount": total_amount,
+            "paid_amount": 0,
+            "remaining_amount": total_amount,
             "invoice_date": datetime.now().strftime('%Y-%m-%d'),
             "status": "inprog"
             }
@@ -2226,20 +2229,146 @@ def get_adebeo_orders():
         return jsonify({"error": str(e)}), 500
 
 
+############################ CxPayment DB ############################
+@app.route('/get_cxpayment', methods=['GET'])
+@login_required
+def get_cxpayment():
+    # Claims and role checking logic stays the same
+    claims = get_jwt()
+    user_role = claims.get("role") 
 
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
 
+    try:
+        # Pagination logic remains
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        skip = (page - 1) * per_page
+        
+        # Fetch records from the 'invoice_collection' without customer_id filter
+        payments = list(invoice_collection.find().skip(skip).limit(per_page))
 
+        # If no payments are found, return a message
+        if not payments:
+            return jsonify({"message": "No payment data found."}), 404
 
-############################ Order DB update #################################
+        # Calculate total pages based on total record count and per_page
+        total_count = invoice_collection.count_documents({})
+        total_pages = (total_count + per_page - 1) // per_page
 
-############################ CxPayment DB update ############################
+        # Clean up documents and remove '_id'
+        for payment in payments:
+            payment.pop('_id', None)
+
+        # Return payments with pagination metadata
+        return jsonify({
+            "current_page": page,
+            "payments": payments,
+            "per_page": per_page,
+            "total_count": total_count,
+            "total_pages": total_pages
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+########################## Payment collection DB ###########################
+@app.route('/process_payment', methods=['POST'])
+@login_required
+def process_payment():
+    # Retrieve user info from JWT claims
+    claims = get_jwt()
+    user_role = claims.get("role")  # Assuming role comes from JWT claims
+
+    # Ensure the user is an admin
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    try:
+        # Get the payment data from the request body (assuming JSON format)
+        data = request.json
+
+        # Extract values from the request
+        customer_id = data.get('customer_id')
+        invoice_number = data.get('invoice_number')
+        invoice_date = data.get('invoice_date')  # ISODate string or date object
+        total_amount = data.get('total_amount')
+        paid_amount = data.get('paid_amount')
+        payment_status = data.get('payment_status')
+        remaining_amount = data.get('remaining_amount', total_amount - paid_amount)  # Default calculation
+        comments = data.get('comment')
+
+        # Ensure the required fields are present
+        required_fields = ['customer_id', 'invoice_number', 'total_amount', 'paid_amount', 'payment_status']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        
+        if missing_fields:
+            return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+
+        # Calculate payment status based on remaining amount
+        new_status = "completed" if remaining_amount <= 0 else "inprog"
+
+        # Convert dates to datetime objects (if necessary)
+        if invoice_date:
+            try:
+                # Parse the date string using strptime (matches the "Thu, 06 Mar 2025 11:41:42 GMT" format)
+                invoice_date = datetime.strptime(invoice_date, "%a, %d %b %Y %H:%M:%S GMT")
+            except ValueError:
+                return jsonify({"error": "Invalid date format. Expected format: 'Thu, 06 Mar 2025 11:41:42 GMT'"}), 400
+        else:
+            invoice_date = None
+
+        current_date = datetime.utcnow()  # Ensure current_date is UTC for consistency
+
+        # Step 1: Insert the full payment record into customer_payments_collection
+        payment_data = {
+            "customer_id": customer_id,
+            "invoice_number": invoice_number,
+            "invoice_date": invoice_date,
+            "total_amount": total_amount,
+            "paid_amount": paid_amount,
+            "remaining_amount": remaining_amount,
+            "payment_date": current_date,
+            "updated_at": datetime.utcnow(),
+            "comments": comments,
+            "payment_status": new_status,
+        }
+
+        # Insert the payment record into customer_payments_collection
+        customer_payments_collection.insert_one(payment_data)
+
+        # Step 2: Update the pending_due in invoice_collection based on the invoice_number
+        invoice_record = invoice_collection.find_one({"invoice_number": invoice_number})
+
+        if invoice_record:
+            # Retrieve the current amount_due from the invoice record
+            pending_due = invoice_record.get('amount_due', 0)
+
+            # Calculate the new pending_due after the payment
+            new_pending_due = pending_due - paid_amount
+
+            # Update the invoice record in invoice_collection
+            invoice_collection.update_one(
+                {"invoice_number": invoice_number},
+                {
+                    "$set": {
+                        "amount_due": new_pending_due,  # Update the pending due amount
+                        "updated_at": datetime.utcnow(),  # Set the updated timestamp
+                    }
+                }
+            )
+
+        else:
+            return jsonify({"error": "Invoice not found"}), 404
+
+        return jsonify({"message": "Payment processed successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 ########################### VxPayment DB update #############################
-
-
-############################ Invoice Preparation #############################
-
-
 
 
 if __name__ == "__main__":
