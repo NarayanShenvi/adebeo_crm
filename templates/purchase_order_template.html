@@ -1,114 +1,357 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Quote Proposal</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Purchase Order</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            line-height: 1.6;
+            font-family:"Shippori Mincho B1", "Times New Roman", serif;
+            margin: 0;
+            padding: 30px;
+            background-color: white;
         }
         header {
+            color: #000000;
+            padding: 15px 15px;
+            background-color: #ebe8e8; /* Dark background for contrast */
+            margin-bottom: 18px;
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            margin-bottom: 20px;
         }
         header img {
-            height: 80px;
+            height: 60px;
+            width: 58px;
         }
         header h1 {
-            font-size: 26px;
-            color: #333;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f4f4f4;
+            color: #000000d7;
+            font-size: 24px;
             font-weight: bold;
+            word-spacing: 6px;
         }
-        tbody tr:nth-child(odd) {
-            background-color: #f9f9f9;
-        }
-        tbody tr:nth-child(even) {
-            background-color: #ffffff;
-        }
-        .terms {
-            margin-top: 30px;
-            font-size: 0.9em;
-            color: #555;
-        }
+        
+.ven{
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    overflow: hidden;  
+    margin-bottom: 15px; 
+}
+.ven strong {
+    color: #1f1d1d;
+    font-size: 16px;
+    font-weight: bold;
+    display: block;
+    margin-bottom: -12px; /* Decrease the gap */
+}
+.placeholder {
+    color: #242424; /* Light gray */
+    font-weight: bold; /* Optional: make it less bold */
+    font-size: 14px;
+    min-width: 120px; /* Adjust width to keep colons aligned */
+    display: inline-block;
+    text-align: left;
+    margin-right: 5px;
+    flex-shrink: 0; /* Prevents placeholder from shrinking */
+}
+.ven td {
+    margin-top: -50px;
+    font-size: 14px; /* Adjust text size */
+    line-height: 1.5; /* Space between lines */
+    word-wrap: break-word; /* Ensures long words break properly */
+    white-space: normal; /* Allows text to wrap */
+    color: #525151;
+    white-space: normal; /* Allows text to break into multiple lines */
+    font-weight: bold;
+}
+.info-row {
+    display: flex;
+    align-items: flex-start; /* Aligns text from the top */
+}
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+.info-row span:last-child {
+    flex-grow: 1; /* Allows text to wrap */
+    word-wrap: break-word; /* Ensures long text breaks properly */
+    white-space: normal; /* Enables wrapping */
+}
+/* Styling for invoice table */
+.client-goods-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 25px;
+}
+
+.client-goods-table td, .client-goods-table th {
+    padding: 10px;
+    text-align: left;
+}
+.client-goods-table th {
+    font-weight: bold;
+    border-top: 2px solid rgb(255, 255, 255);
+    background-color: #b4b4b4; /* Light gray for better contrast */
+    color: #000; /* Black text for visibility */
+    font-size: 13px;
+    word-wrap: break-word; /* Breaks long words */
+    white-space: normal; /* Allows wrapping */
+    overflow-wrap: break-word; /* Ensures breaking */
+}
+
+.client-goods-table td {
+    word-wrap: break-word; /* Breaks long words */
+    white-space: normal; /* Allows wrapping */
+    overflow-wrap: break-word; /* Ensures breaking */
+    font-size: 13px;
+    color: #242424; /* Light gray */
+    font-weight: bold;
+    border-top: 2px solid rgb(255, 255, 255);
+    background-color: #dad7d777;
+}
+
+/* Column Widths */
+.client-goods-table th:nth-child(1), 
+.client-goods-table td:nth-child(1) { width: 5%; }  /* SL - Small */
+
+.client-goods-table th:nth-child(2), 
+.client-goods-table td:nth-child(2) { width: 40%; }  /* Product Description - Wide */
+
+.client-goods-table th:nth-child(3), 
+.client-goods-table td:nth-child(3) { width: 10%; }  /* Quantity */
+
+.client-goods-table th:nth-child(4), 
+.client-goods-table td:nth-child(4) { width: 10%; }  /* Unit Price */
+
+.client-goods-table th:nth-child(5), 
+.client-goods-table td:nth-child(5) { width: 15%; }  /* Gross Total */
+
+.client-goods-table th:nth-child(6), 
+.client-goods-table td:nth-child(6) { width: 10%; }  /* Taxes */
+
+.client-goods-table th:nth-child(7), 
+.client-goods-table td:nth-child(7) { width: 10%; }  /* Net Total */
+
+
+
+/* Styling for Client Info */
+.client-goods-table .placeholder
+{
+    color: #242424; /* Light gray */
+    font-weight: bold; /* Optional: make it less bold */
+    font-size: 14px;
+    min-width: 120px; /* Adjust width to keep colons aligned */
+    display: inline-block;
+    text-align: left;
+    margin-right: 5px;
+    flex-shrink: 0; /* Prevents placeholder from shrinking */
+}
+.client-goods-table tr:first-child td,
+.client-goods-table tr:nth-child(2) td {
+    font-size: 14px;
+    font-weight: bold;
+    background-color: #a09f9f2a;
+    color: #525151;
+    padding-top: 13px;
+    padding-bottom: 5px;
+}
+/* Styling the entire net total row */
+.net-total-row {
+    background-color: #8181819f; /* Light gray background */
+    font-weight: bold;
+    color: #020202; /* Dark gray text */
+}
+
+/* Styling the text column (Net Total in Words) */
+.net-total-text {
+   text-align: center !important;
+   color: #020202; /* Dark gray text */
+}
+
+/* Styling the amount column (₹ value) */
+.net-total-amount {
+    text-align: center !important;
+    color: #020202; /* Dark gray text */
+}
+
+
+/* Note styling */
+.note {
+    margin-top: 30px;
+}
+
+.note h3 {
+    display: block;
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #1f1d1d;
+    text-align: left;
+}
+
+.note h3::before {
+    content: "\f05a"; /* Font Awesome info-circle icon */
+    font-family: "Font Awesome 5 Free";
+    margin-right: 8px;
+}
+
+.note ul {
+    padding-left: 71px; /* Indent list */
+    margin: 5px 0;
+    list-style: none; /* Remove default bullets */
+}
+
+.note li {
+    font-size: 14px;
+    line-height: 1.5; /* Space between lines */
+    word-wrap: break-word; /* Ensures long words break properly */
+    color: #525151;
+    white-space: normal; /* Allows text to break into multiple lines */
+    text-align: left;
+    margin-bottom: 5px;
+    position: relative;
+    font-weight: bold;
+}
+
+.note li::before {
+    content: "☛"; 
+    font-size: 14px;
+    position: absolute;
+    left: -19px;
+    top: 2px;
+}
+
+footer {
+    background-color: #ebe8e8; /* Dark background for contrast */
+    color: #ffffff; /* White text for readability */
+    text-align: center; /* Center align content */
+    padding: 5px 5px; /* Proper spacing */
+    font-size: 14px; /* Optimal text size */
+    font-weight: 400;
+    margin-top: 40px;
+}
+
+footer p {
+    margin: 0;
+    padding: 5px 0;
+    line-height: 1.6;
+    color: #3b3b3a; /* Highlight company name with gold */
+}
+
+footer strong {
+    font-weight: bold;
+    color: #333331; /* Highlight company name with gold */
+}
+
+
+
     </style>
 </head>
 <body>
-    <!-- Header Section -->
     <header>
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Company Logo">
-        <h1>Quote Proposal</h1>
+       <img src="{{ base_url + url_for('static', filename='logo.png') }}" alt="Company Logo">
+        <h1>PURCHASE ORDER</h1>
     </header>
 
-    <!-- Quote Details -->
-    <p><strong>Quote Number:</strong> {{ quote_number }}</p>
-    <p><strong>Date:</strong> {{ date }}</p>
-
-    <!-- Customer Details -->
-    <div>
-        <h2>Customer Details</h2>
-        <p><strong>Name:</strong> {{ customer_name }}</p>
-        <p><strong>Address:</strong> {{ customer_address }}</p>
-        <p><strong>Email:</strong> {{ customer_email }}</p>
-        <p><strong>Phone:</strong> {{ customer_phone }}</p>
-    </div>
- <!-- about Company -->
-	  <div class="section">
-	  <h2>About Adebeo</h2>
-	  <p>{{ company_description }}</p>	
-	  </div>
-    <!-- Product Details -->
-    <div>
-        <h2>Product Details</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Sl. No.</th>
-                    <th>Product Description</th>
-                    <th>Quantity</th>
-                    <th>Unit Price (₹)</th>
-                    <th>Total Price (₹)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in products %}
-                <tr>
-                    <td>{{ item.sl_no }}</td>
-                    <td>{{ item.description }}</td>
-                    <td>{{ item.quantity }}</td>
-                    <td>{{ item.unit_price }}</td>
-                    <td>{{ item.sub_total }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
+    <table class="ven">
+        <tr>
+            <td>
+                <strong><i class="fas fa-info-circle"></i> Vendor Details:</strong><br>
+                <div class="info-row">
+                    <span class="placeholder">PO No.:</span> <span class="value">{{ po_number }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="placeholder">Date:</span> <span class="value">{{ date }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="placeholder">Vendor:</span> <span class="value">{{ vendor }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="placeholder">Contact:</span> <span class="value">{{ contact_name }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="placeholder">Address:</span> <span class="value">{{ vendor_address }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="placeholder">Tel:</span> <span class="value">{{ telephone }}</span>
+                </div>
+                <div class="info-row">
+                    <span class="placeholder">Email:</span> <span class="value">{{ email }}</span>
+                </div>
+            </td>
+        </tr>
+    </table>
+    
+        <table class="client-goods-table">
+            <!-- Client Information Section -->
+            <tr>
+                <td colspan="7">
+                    <div class="info-row">
+                        <span class="placeholder">Client Name:</span> <span>{{ customer_name }}</span>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="7">
+                    <div class="info-row">
+                        <span class="placeholder">Ref PO:</span> <span>{{ client_ref_po }}</span>
+                    </div>
+                </td>
+            </tr>
+        
+            <!-- Header Row for Goods/Services -->
+            <tr>
+                <th>SL.</th>
+                <th>Product Description</th>
+                <th>Quantity</th>
+                <th>Unit Price (₹)</th>
+                <th>Gross Toatal Price (₹)</th>
+                <th>Taxes Applicable GST @ 18%</th>
+                <th>Net Total Price(₹)</th>
+            </tr>
+        
+            <!-- Loop to Display Items -->
+            <tr>
+                <td>{{ po_pdf_data.index }}</td>  
+                <td>{{ product_name }}</td>  
+                <td>{{quantity }}</td>  
+                <td>₹ {{purchase_price }}</td>  
+                <td>₹ {{ total_amount}}</td>  
+                <td> {{ ( total_amount* 0.18 )|round(2)}}</td>  
+                <td>₹ {{( total_amount+( total_amount* 0.18 ))}}</td>  
+            </tr>
+            <!-- Net Total in Words Row -->
+            <tr class="net-total-row">
+                <td colspan="6" class="net-total-text">
+                    <strong>Net Total Price (in words):</strong> {{ net_total_words }}
+                </td>
+                <td class="net-total-amount">
+                    ₹ {{ po_pdf_data.net_total }}
+                </td>
+            </tr>
+            
+            
         </table>
+    
+   
+    <div class="note">
+        <h3>Note</h3>
+        <ul>
+            {% if notes %}
+                {% for note in notes %}
+                    <li>{{ note }}</li>
+                {% endfor %}
+            {% else %}
+                <li>No notes available.</li>
+            {% endif %}
+        </ul>
     </div>
+    
 
-<!-- Terms and Conditions -->
-<div class="terms">
-    <h3>Terms and Conditions</h3>
-    {% if terms %}
-        {% for line in terms %}
-            <p>{{ line }}</p>
-        {% endfor %}
-    {% else %}
-        <p>No terms available.</p>
-    {% endif %}
-</div>
+    <footer>
+        <p><strong>{{ company_name }}</strong> / {{ company_address }} / {{ company_contact }} / {{ company_email }}</p>
+    </footer>
+    
+
 </body>
 </html>

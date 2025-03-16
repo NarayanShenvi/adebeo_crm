@@ -2,7 +2,7 @@
 <html>
 <head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <title>PO_Invoice</title>
+    <title>Invoice</title>
     <style>
         body {
             font-family:"Shippori Mincho B1", "Times New Roman", serif;
@@ -72,8 +72,8 @@
     word-wrap: break-word; /* Ensures long text breaks properly */
     white-space: normal; /* Enables wrapping */
 }
-/* Styling for po-po_invoice table */
-.po_invoice-table {
+/* Styling for invoice table */
+.invoice-table {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed; /* Ensures even column spacing */
@@ -81,7 +81,7 @@
 }
 
 /* Table header styling */
-.po_invoice-table th {
+.invoice-table th {
     background-color: #b4b4b4; /* Light gray for better contrast */
     color: #000; /* Black text for visibility */
     font-size: 13px;
@@ -94,7 +94,7 @@
 }
 
 /* Table cell styling */
-.po_invoice-table td {
+.invoice-table td {
     word-wrap: break-word; /* Breaks long words */
     white-space: normal; /* Allows wrapping */
     overflow-wrap: break-word; /* Ensures breaking */
@@ -107,28 +107,28 @@
 }
 
 /* Adjusting column widths */
-.po_invoice-table th:nth-child(1), /* Bill To */
-.po_invoice-table td:nth-child(1) {
+.invoice-table th:nth-child(1), /* Bill To */
+.invoice-table td:nth-child(1) {
     width: 20%; /* Increase width */
 }
 
-.po_invoice-table th:nth-child(2), /* Place of Supply */
-.po_invoice-table td:nth-child(2) {
+.invoice-table th:nth-child(2), /* Place of Supply */
+.invoice-table td:nth-child(2) {
     width: 25%; /* Increase width */
 }
 
-.po_invoice-table th:nth-child(3), /* Invoice No */
-.po_invoice-table td:nth-child(3) {
+.invoice-table th:nth-child(3), /* Invoice No */
+.invoice-table td:nth-child(3) {
     width: 15%;
 }
 
-.po_invoice-table th:nth-child(4), /* PO Ref */
-.po_invoice-table td:nth-child(4) {
+.invoice-table th:nth-child(4), /* PO Ref */
+.invoice-table td:nth-child(4) {
     width: 15%;
 }
 
-.po_invoice-table th:nth-child(5), /* Date */
-.po_invoice-table td:nth-child(5) {
+.invoice-table th:nth-child(5), /* Date */
+.invoice-table td:nth-child(5) {
     width: 15%;
 }
 
@@ -141,21 +141,21 @@
     margin-top: 20px;
 }
 
-/* Styling for po_invoice-details */
-.po_invoice-details {
+/* Styling for invoice-details */
+.invoice-details {
     width: 100%;
     border-collapse: collapse;
     margin-top: 25px;
     table-layout: fixed; /* Ensures even column spacing */
 }
 
-.po_invoice-details th, 
-.po_invoice-details td {
+.invoice-details th, 
+.invoice-details td {
     padding: 10px;
     text-align: left;
 }
 
-.po_invoice-details th {
+.invoice-details th {
     font-weight: bold;
     border-top: 2px solid rgb(255, 255, 255);
     background-color: #b4b4b4; /* Light gray for better contrast */
@@ -166,9 +166,9 @@
     overflow-wrap: break-word; /* Ensures breaking */
 }
 
-.po_invoice-details td {
-	white-space: pre-line;; /* Allows wrapping */
-	word-wrap: break-word; /* Breaks long words */
+.invoice-details td {
+    word-wrap: break-word; /* Breaks long words */
+    white-space: normal; /* Allows wrapping */
     overflow-wrap: break-word; /* Ensures breaking */
     font-size: 13px;
     color: #242424; /* Light gray */
@@ -178,25 +178,25 @@
 }
 
 /* Make the first column (Description of Goods/Service) wider */
-.po_invoice-details td:first-child, 
-.po_invoice-details th:first-child {
+.invoice-details td:first-child, 
+.invoice-details th:first-child {
     width: 20%; /* Adjust the width as needed */
 }
 
 /* Adjust the remaining column widths */
-.po_invoice-details td:nth-child(2),
-.po_invoice-details th:nth-child(2) {
+.invoice-details td:nth-child(2),
+.invoice-details th:nth-child(2) {
     width: 15%;
 }
 
-.po_invoice-details td:nth-child(3),
-.po_invoice-details th:nth-child(3),
-.po_invoice-details td:nth-child(4),
-.po_invoice-details th:nth-child(4),
-.po_invoice-details td:nth-child(5),
-.po_invoice-details th:nth-child(5),
-.po_invoice-details td:nth-child(6),
-.po_invoice-details th:nth-child(6) {
+.invoice-details td:nth-child(3),
+.invoice-details th:nth-child(3),
+.invoice-details td:nth-child(4),
+.invoice-details th:nth-child(4),
+.invoice-details td:nth-child(5),
+.invoice-details th:nth-child(5),
+.invoice-details td:nth-child(6),
+.invoice-details th:nth-child(6) {
     width: 10%;
 }
 
@@ -309,11 +309,6 @@
     font-family: "Font Awesome 5 Free";
     margin-right: 8px;
 }
-.notes p {
-        white-space: pre-line; /* This will respect the newlines */
-        word-wrap: break-word; /* Ensure no word overflow */
-        overflow-wrap: break-word; /* To make sure long words break properly */
-		}
 
 .note ul {
     padding-left: 71px; /* Indent list */
@@ -367,8 +362,8 @@ footer strong {
 </head>
 <body>
     <header>
-	 <img src="{{ base_url + url_for('static', filename='logo.png') }}" alt="Company Logo">
-     <h1>INVOICE</h1>
+        <img src="{{ logo_url }}" alt="Company Logo">
+        <h1>TAX INVOICE</h1>
     </header>
 
     <table class="com">
@@ -382,7 +377,7 @@ footer strong {
                     <span class="placeholder">Address:</span> <span>{{ company_address }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">GSTIN:</span> <span>{{ company_gstin }}</span>
+                    <span class="placeholder">GSTIN:</span> <span>{{ company_GSTIN }}</span>
                 </div>
             </td>
         </tr>
@@ -390,39 +385,30 @@ footer strong {
     
     
     
-<table class="po_invoice-table">
-    <thead>
-        <tr>
-            <th>Bill To</th>
-            <th>Place of Supply</th>
-            <th>po_invoice No.</th>
-            <th>PO Ref</th>
-            <th>Date</th>
-        </tr>
-    </thead>
-    <tbody>
-        <!-- Row 1: Customer Name & Customer Address -->
-        <tr>
-            <td>{{ customer_name }}</td>
-           <td>{{ customer_name }}</td>
-            <td>{{ invoice_number }}</td>
-            <td>{{ po_invoice.po_ref }}</td>
-            <td>{{ date }}</td>
-        </tr>
-        <!-- Row 2: Customer Billing Name & Customer Billing Address -->
-        <tr>
-			 <td>{{ customer_address }}</td>
-             <td>{{ customer_address }}</td>
-            <td>&nbsp;</td> <!-- Empty cell for po_invoice no -->
-            <td>&nbsp;</td> <!-- Empty cell for PO ref -->
-            <td>&nbsp;</td> <!-- Empty cell for Date -->
-        </tr>
-    </tbody>
-</table>
+    <table class="invoice-table">
+        <thead>
+            <tr>
+                <th>Bill To</th>
+                <th>Place of Supply</th>
+                <th>Invoice No.</th>
+                <th>PO Ref</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ invoice.customer_name }}</td>
+                <td>{{ invoice.place_of_supply }}</td>
+                <td>{{ invoice.invoice_number }}</td>
+                <td>{{ invoice.po_ref }}</td>
+                <td>{{ invoice.insertDate }}</td>
+            </tr>
+        </tbody>
+    </table>
     
     <div class="table-container">
         <!-- Order Details Table -->
-        <table class="po_invoice-details">
+        <table class="invoice-details">
             <thead>
                 <tr>
                     <th>Description of Goods Service</th>
@@ -430,45 +416,45 @@ footer strong {
                     <th>Quantity</th>
                     <th>Unit Price (₹)</th>
                     <th>Discount (₹)</th>
-                    <th>Sub Total (₹)</th>
-				</tr>
+                    <th>Total (₹)</th>
+                </tr>
             </thead>
             <tbody>
-				{% for item in products %}
+                {% for invoice in invoices %}
                 <tr>
-                    <td>{{ item.description }}</td>  <!-- Changed to match 'Description of Goods/Service' -->
-                    <td>{{ item.sac_code }}</td>  <!-- Changed to match 'SAC Code' -->
-                    <td>{{ item.quantity }}</td>  <!-- Correctly matches 'Quantity' -->
-                    <td>{{ item.unit_price }}</td>  <!-- Correctly matches 'Unit Price (₹)' -->
-                    <td>{{ item.discount }}  <!-- Correctly matches 'Discount (₹)' -->
-                    <td>{{ item.sub_total }}</td>  <!-- Correctly matches 'Total (₹)' -->
-				</tr>
-				{% endfor %}
-		    </tbody>
+                    <td>{{ invoice.product_name }}</td>  <!-- Changed to match 'Description of Goods/Service' -->
+                    <td>{{ invoice.sac_code }}</td>  <!-- Changed to match 'SAC Code' -->
+                    <td>{{ invoice.quantity }}</td>  <!-- Correctly matches 'Quantity' -->
+                    <td>₹ {{ invoice.unit_price }}</td>  <!-- Correctly matches 'Unit Price (₹)' -->
+                    <td>₹ {{ invoice.discount }}</td>  <!-- Correctly matches 'Discount (₹)' -->
+                    <td>₹ {{ invoice.total_amount }}</td>  <!-- Correctly matches 'Total (₹)' -->
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
     
     
         <!-- Summary Table (Positioned Bottom Right) -->
         <table class="summary-table">
             <tr>
-                <td><strong>Total:</strong></td>
-                <td>₹ {{ total_sum  }}</td>
+                <td><strong>Subtotal:</strong></td>
+                <td>₹ {{ subtotal }}</td>
             </tr>
             <tr>
-                <td><strong>Addl. Discount:</strong></td>
-                <td>₹ {{ addl_discount }}</td>
+                <td><strong>Discount:</strong></td>
+                <td>₹ {{ total_discount }}</td>
             </tr>
             <tr>
                 <td><strong>Discounted Total:</strong></td>
-                <td>₹ {{( total_sum - addl_discount )|round(2) }}</td>
+                <td>₹ {{ discounted_total }}</td>
             </tr>
             <tr>
                 <td><strong>Tax:</strong></td>
-                <td>₹ {{(( total_sum - addl_discount)* 0.18 )|round(2) }}</td>
+                <td>₹ {{ tax }}</td>
             </tr>
             <tr>
                 <td><strong>Grand Total:</strong></td>
-                <td>₹ {{ gross_total }}</td>
+                <td>₹ {{ grand_total }}</td>
             </tr>
         </table>
     </div>
@@ -480,8 +466,7 @@ footer strong {
             <td class="left-column">
                 <strong><i class="fa-solid fa-indian-rupee-sign"></i> Amount Chargeable:</strong>
                 <div class="info-row">
-                    <span class="placeholder">Amount in Words:</span> 
-						<span>{{ amount_in_words }}</span>
+                    <span class="placeholder">Amount in Words:</span> <span>{{ amount_in_words }}</span>
                 </div>
                 <div class="info-row">
                     <span class="placeholder">Company PAN:</span> <span>{{ company_pan }}</span>
@@ -490,16 +475,16 @@ footer strong {
             <td class="right-column">
                 <strong><i class="fas fa-university"></i> Bank Details:</strong>
                 <div class="info-row">
-                    <span class="placeholder">Current A/C No:</span> <span>{{ company_account_no1 }}</span>
+                    <span class="placeholder">Current A/C No:</span> <span>{{ account_number }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">Payee Name:</span> <span>{{ company_payee }}</span>
+                    <span class="placeholder">Payee Name:</span> <span>{{ payee_name }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">IFSC Code:</span> <span>{{ company_ifsc1 }}</span>
+                    <span class="placeholder">IFSC Code:</span> <span>{{ ifsc_code }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">Branch Name:</span> <span>{{ company_bankbranch1 }}</span>
+                    <span class="placeholder">Branch Name:</span> <span>{{ branch_name }}</span>
                 </div>
             </td>
         </tr>
@@ -508,7 +493,15 @@ footer strong {
     
     <div class="note">
         <h3>Note</h3>
-         <p>{{ notes }}</p>
+        <ul>
+            {% if notes %}
+                {% for note in notes %}
+                    <li>{{ note }}</li>
+                {% endfor %}
+            {% else %}
+                <li>No notes available.</li>
+            {% endif %}
+        </ul>
     </div>
     
 
