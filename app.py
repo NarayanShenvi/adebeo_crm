@@ -1308,7 +1308,8 @@ def adebeo_create_quotes():
         response = {
             "message": "Quote successfully created!",
             "quote_id": str(result.inserted_id),
-            "pdf_link": f"/static/pdf/{pdf_filename}"  # Local path for now
+            "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
+            "base_url": base_url  # Ensure this is never None
         }
 
         # Log the response data
@@ -1667,7 +1668,8 @@ def create_performa():
         response = {
             "message": "Performa successfully created!",
             "performa_id": str(result.inserted_id),
-            "pdf_link": f"/static/pdf/{pdf_filename}"  # Local path for now
+            "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
+            "base_url": base_url  # Ensure this is never None
         }
 
         # Log the response data
@@ -1819,7 +1821,8 @@ def create_invoice():
         response = {
             "message": "Invoice successfully created!",
             "invoice_id": str(result.inserted_id),
-            "pdf_link": f"/static/pdf/{pdf_filename}"  # Local path for now
+            "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
+            "base_url": base_url  # Ensure this is never None
         }
 
         # Log the response data
@@ -1835,6 +1838,7 @@ def create_invoice():
 @app.route('/get_performas', methods=['GET'])
 def get_performas():
     try:
+        base_url = 'https://adebeo-crm1.onrender.com'
         # Get query parameters: customer_id, page, per_page
         customer_id = request.args.get("customer_id")
         page = int(request.args.get("page", 1))  # Default to page 1 if not provided
@@ -1855,7 +1859,23 @@ def get_performas():
             .limit(limit)
 
         # Convert the cursor to a list of performas and apply the conversion of ObjectIds to strings
-        performas = [convert_objectid_to_str(performa) for performa in performas_cursor]
+        performas = []
+        for performa in performas_cursor:
+            # Construct PDF link
+            pdf_filename = performa.get("pdf_filename", "")  # Default to empty string if not found
+            #base_url = performa.get("base_url", "")  # Default to empty string if not found
+
+            # Build performa data
+            performa_data = {
+                "performa_id": str(performa["_id"]),
+                "performa_number": str(performa.get("performa_number", "")),
+                "performa_date": performa.get("insertDate", "").strftime('%Y-%m-%d') if performa.get("insertDate") else "",
+                "total_amount": performa.get("total_amount", 0),
+                "items": performa.get("items", ""),
+                "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
+                "base_url": base_url
+            }
+            performas.append(performa_data)
 
         # Count total performas for the customer to calculate total pages
         total_performas = adebeo_performa_collection.count_documents(query)
@@ -1873,50 +1893,162 @@ def get_performas():
         }), 200
 
     except Exception as e:
-        logging.error(f"Error fetching performas: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        logging.error("Error fetching performas: %s", str(e))  # Log error
+        return jsonify({"error": "Error fetching performas"}), 500
 
+# @app.route('/get_performas', methods=['GET'])
+# def get_performas():
+#     try:
+#         # Get query parameters: customer_id, page, per_page
+#         customer_id = request.args.get("customer_id")
+#         page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+#         limit = int(request.args.get("per_page", 10))  # Default to 10 performas per page
+
+#         # Ensure pagination values are valid
+#         if page < 1 or limit < 1:
+#             return jsonify({"error": "Invalid page or per_page value"}), 400
+
+#         # Calculate the skip value for MongoDB query (pagination offset)
+#         skip = (page - 1) * limit
+
+#         # Query to find performas for the given customer_id, sorted by insertDate in descending order (latest first)
+#         query = {"customer_id": customer_id}
+#         performas_cursor = adebeo_performa_collection.find(query) \
+#             .sort("insertDate", -1) \
+#             .skip(skip) \
+#             .limit(limit)
+
+#         # Convert the cursor to a list of performas and apply the conversion of ObjectIds to strings
+#         performas = [convert_objectid_to_str(performa) for performa in performas_cursor]
+
+#         # Count total performas for the customer to calculate total pages
+#         total_performas = adebeo_performa_collection.count_documents(query)
+#         total_pages = (total_performas + limit - 1) // limit  # Ceiling division to calculate total pages
+
+#         # Return the performas with pagination info
+#         return jsonify({
+#             "performas": performas,
+#             "pagination": {
+#                 "page": page,
+#                 "per_page": limit,
+#                 "total_performas": total_performas,
+#                 "total_pages": total_pages
+#             }
+#         }), 200
+
+#     except Exception as e:
+#         logging.error(f"Error fetching performas: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
 
 @app.route('/get_invoices', methods=['GET'])
 @login_required
 def get_invoices():
-    # Get the customer ID from the request parameters
-    customer_id = request.args.get("customer_id")
+    try:
+        # Get the customer ID from the request parameters
+        base_url = 'https://adebeo-crm1.onrender.com'
+        customer_id = request.args.get("customer_id")
+        
+        # Pagination parameters (page and limit)
+        page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+        limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
+
+        # Ensure pagination values are valid
+        if page < 1 or limit < 1:
+            return jsonify({"error": "Invalid page or limit"}), 400
+
+        # Calculate the skip value for MongoDB query (pagination offset)
+        skip = (page - 1) * limit
+
+        # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
+        invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
+            .sort("insertDate", -1) \
+            .skip(skip) \
+            .limit(limit)
+
+        # Convert the cursor to a list of invoices and handle PDF link
+        invoices = []
+        for invoice in invoices_cursor:
+            # Extract PDF filename and base_url (adjust field names based on your schema)
+            pdf_filename = invoice.get("pdf_filename", "")  # Default to empty string if not found
+            #base_url = invoice.get("base_url", "")  # Default to empty string if not found
+
+            # Construct PDF link
+            pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
+
+            # Build invoice data
+            invoice_data = {
+                "invoice_id": str(invoice["_id"]),
+                "invoice_number": str(invoice.get("invoice_number", "")),
+                "invoice_date": invoice.get("insertDate", "").strftime('%Y-%m-%d') if invoice.get("insertDate") else "",
+                "total_amount": invoice.get("total_amount", 0),
+                "items": invoice.get("items", ""),
+                "pdf_link": pdf_link,
+                "base_url": base_url
+            }
+            invoices.append(invoice_data)
+
+        # Count total invoices for the customer to calculate total pages
+        total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
+        total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
+
+        # Return the invoices with pagination info
+        return jsonify({
+            "invoices": invoices,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total_invoices": total_invoices,
+                "total_pages": total_pages
+            }
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching invoices: {str(e)}")
+        return jsonify({"error": f"An error occurred while fetching invoices: {str(e)}"}), 500
+
+
+# @app.route('/get_invoices', methods=['GET'])
+# @login_required
+# def get_invoices():
+#     # Get the customer ID from the request parameters
+#     customer_id = request.args.get("customer_id")
     
-    # Pagination parameters (page and limit)
-    page = int(request.args.get("page", 1))  # Default to page 1 if not provided
-    limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
+#     # Pagination parameters (page and limit)
+#     page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+#     limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
 
-    # Ensure pagination values are valid
-    if page < 1 or limit < 1:
-        return jsonify({"error": "Invalid page or limit"}), 400
+#     # Ensure pagination values are valid
+#     if page < 1 or limit < 1:
+#         return jsonify({"error": "Invalid page or limit"}), 400
 
-    # Calculate the skip value for MongoDB query (pagination offset)
-    skip = (page - 1) * limit
+#     # Calculate the skip value for MongoDB query (pagination offset)
+#     skip = (page - 1) * limit
 
-    # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
-    invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
-        .sort("insertDate", -1) \
-        .skip(skip) \
-        .limit(limit)
+#     # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
+#     invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
+#         .sort("insertDate", -1) \
+#         .skip(skip) \
+#         .limit(limit)
 
-    # Convert the cursor to a list of invoices
-    invoices = list(invoices_cursor)
+#     # Convert the cursor to a list of invoices
+#     invoices = list(invoices_cursor)
 
-    # Count total invoices for the customer to calculate total pages
-    total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
-    total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
+#     # Count total invoices for the customer to calculate total pages
+#     total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
+#     total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
 
-    # Return the invoices with pagination info
-    return jsonify({
-        "invoices": invoices,
-        "pagination": {
-            "page": page,
-            "limit": limit,
-            "total_invoices": total_invoices,
-            "total_pages": total_pages
-        }
-    }), 200
+#     # Return the invoices with pagination info
+#     return jsonify({
+#         "invoices": invoices,
+#         "pagination": {
+#             "page": page,
+#             "limit": limit,
+#             "total_invoices": total_invoices,
+#             "total_pages": total_pages
+#         }
+#     }), 200
+
+
 ############################## Purchase Order Preparation ####################
 def generate_purchase_order_number():
     current_year = datetime.now().year
@@ -2241,7 +2373,8 @@ def create_purchase_orders():
             company_address = company_address,
             company_contact = company_contact,
             company_email = company_email,
-            net_total_words = num2words(total_amount)
+            net_total_words = num2words(total_amount),
+            base_url = base_url
         
 
             )
@@ -2253,11 +2386,36 @@ def create_purchase_orders():
             pdf_filename = f"purchase_order_{po_number}.pdf"
 
             # Generate PDF and save it
-            local_pdf_folder = './static/pdf'
-            os.makedirs(local_pdf_folder, exist_ok=True)
-            local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+            # local_pdf_folder = './static/pdf'
+            # os.makedirs(local_pdf_folder, exist_ok=True)
+            # local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
 
-            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            #HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+
+            # Local file save (for debugging purposes)
+            local_pdf_folder = './static/pdf'  # Local folder for testing
+            os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+            local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+            try:
+                HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+                logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+            except Exception as e:
+                logging.error(f"Error saving local PDF: {str(e)}")
+
+            # Remote file save (on Render persistent disk)
+            remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+            os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+            remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+            try:
+                HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+                # Check if the file was saved successfully
+                if os.path.exists(remote_pdf_file_path):
+                    logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+                else:
+                    logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+            except Exception as e:
+                logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
 
             # Update the PO document with the PDF file path
             adebeo_purchase_order_collection.update_one(
@@ -2379,18 +2537,44 @@ def create_purchase_orders():
              # Generate a random UUID for the file name
        
         # Define PDF output path
-        local_pdf_folder = './static/pdf'
-        os.makedirs(local_pdf_folder, exist_ok=True)
+        #local_pdf_folder = './static/pdf'
+        #os.makedirs(local_pdf_folder, exist_ok=True)
         pdf_filename = f"invoice_{invoice_number}.pdf"
-        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        #local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
 
         # Generate PDF from HTML
-        HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+        #HTML(string=rendered_html).write_pdf(local_pdf_file_path)
 
+
+        # Local file save (for debugging purposes)
+        local_pdf_folder = './static/pdf'  # Local folder for testing
+        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        try:
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving local PDF: {str(e)}")
+
+        # Remote file save (on Render persistent disk)
+        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+        try:
+            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+            # Check if the file was saved successfully
+            if os.path.exists(remote_pdf_file_path):
+                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+            else:
+                logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+        
         # Update the invoice record in DB with the path to the saved PDF
         invoice_collection.update_one(
             {"invoice_number": invoice_number},
-            {"$set": {"pdf_filename": f"/static/pdf/{pdf_filename}"}}
+            {"$set": {"pdf_filename": pdf_filename}}
         )
         # this section is for generating Invoices--------------------------------------------------
         ### customer Payment Initiate =========================================
@@ -2406,11 +2590,7 @@ def create_purchase_orders():
             }
         customer_payments_collection.insert_one(customer_payment_data)
          ### customer Payment Initiate =========================================
-
-
-
-
-
+        
         # Update the Proforma collection (purchase_status to True)
         adebeo_performa_collection.update_one(
             {"performa_number": performa_number},  # Find Proforma by ID
@@ -2427,7 +2607,6 @@ def create_purchase_orders():
         logging.error(f"Error creating Purchase Orders: {str(e)}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
-
 @app.route("/get_purchase_orders", methods=["GET"])
 @login_required
 def get_purchase_orders():
@@ -2435,13 +2614,14 @@ def get_purchase_orders():
     
     claims = get_jwt()
     user_role = claims.get("role") 
-    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+    # user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
 
     # Ensure the user is an admin
     if user_role != "admin":
         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
 
     try:
+        base_url = 'https://adebeo-crm1.onrender.com'
         # Get query parameters
         page = int(request.args.get('page', 1))
         rows_per_page = int(request.args.get('rows_per_page', 10))
@@ -2452,16 +2632,36 @@ def get_purchase_orders():
 
         # Query to fetch purchase orders with pagination
         skip = (page - 1) * rows_per_page
-        orders = adebeo_purchase_order_collection.find().skip(skip).limit(rows_per_page)
+        orders_cursor = adebeo_purchase_order_collection.find().skip(skip).limit(rows_per_page)
+
         total_orders = adebeo_purchase_order_collection.count_documents({})
-        total_pages = (total_orders + rows_per_page - 1) // rows_per_page
+        total_pages = (total_orders + rows_per_page - 1) // rows_per_page  # Calculate total pages
 
         # Convert orders to a list and serialize ObjectIds as strings
         orders_list = []
-        for order in orders:
-            # Convert ObjectId fields to strings
-            order['_id'] = str(order['_id'])  # Convert ObjectId to string
-            orders_list.append(order)
+        for order in orders_cursor:
+            # Extract PDF filename (you may need to adjust field names based on your schema)
+            pdf_filename = order.get("pdf_filename", "")  # Default to empty string if not found
+            #base_url = order.get("base_url", "")  # Default to empty string if not found
+
+            # Construct PDF link
+            pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
+
+            # Build order data
+            order_data = {
+                "_id": str(order["_id"]),
+                "po_number": str(order.get("po_number", "")),
+                "date": order.get("date", "").strftime('%Y-%m-%d') if order.get("insertDate") else "",
+                "total_amount": order.get("total_amount", 0),
+                "items": order.get("items", ""),
+                "product_name": order.get("product_name",""),
+                "vendor":order.get("vendor",""),
+                "status":order.get("status",""),
+                "customer_name":order.get("customer_name",""),
+                "pdf_link": pdf_link,
+                "base_url": base_url
+            }
+            orders_list.append(order_data)
 
         return jsonify({
             "orders": orders_list,
@@ -2474,8 +2674,53 @@ def get_purchase_orders():
         logging.error(f"Error fetching purchase orders: {str(e)}")
         return jsonify({"error": f"An error occurred while fetching purchase orders: {str(e)}"}), 500
 
-from bson import ObjectId, json_util
-from flask import Response, jsonify
+
+# @app.route("/get_purchase_orders", methods=["GET"])
+# @login_required
+# def get_purchase_orders():
+#     username = request.user
+    
+#     claims = get_jwt()
+#     user_role = claims.get("role") 
+#     #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+#     # Ensure the user is an admin
+#     if user_role != "admin":
+#         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#     try:
+#         # Get query parameters
+#         page = int(request.args.get('page', 1))
+#         rows_per_page = int(request.args.get('rows_per_page', 10))
+
+#         # Validate the parameters
+#         if page < 1 or rows_per_page < 1:
+#             return jsonify({"error": "Invalid page or rows per page"}), 400
+
+#         # Query to fetch purchase orders with pagination
+#         skip = (page - 1) * rows_per_page
+#         orders = adebeo_purchase_order_collection.find().skip(skip).limit(rows_per_page)
+#         total_orders = adebeo_purchase_order_collection.count_documents({})
+#         total_pages = (total_orders + rows_per_page - 1) // rows_per_page
+
+#         # Convert orders to a list and serialize ObjectIds as strings
+#         orders_list = []
+#         for order in orders:
+#             # Convert ObjectId fields to strings
+#             order['_id'] = str(order['_id'])  # Convert ObjectId to string
+#             orders_list.append(order)
+
+#         return jsonify({
+#             "orders": orders_list,
+#             "page": page,
+#             "total_orders": total_orders,
+#             "total_pages": total_pages
+#         }), 200
+
+#     except Exception as e:
+#         logging.error(f"Error fetching purchase orders: {str(e)}")
+#         return jsonify({"error": f"An error occurred while fetching purchase orders: {str(e)}"}), 500
+
 
 @app.route('/get_adebeo_orders', methods=['GET'])
 @login_required
@@ -2529,7 +2774,7 @@ def get_adebeo_orders():
             grouped_orders[product_name].append(order)
 
         # Return the grouped orders as a JSON response
-        return Response(json_util.dumps(grouped_orders), mimetype='application/json')
+        return Response (json_util.dumps(grouped_orders), mimetype='application/json')
 
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -2537,48 +2782,127 @@ def get_adebeo_orders():
 
 
 ############################ CxPayment DB ############################
+
+
 @app.route('/get_cxpayment', methods=['GET'])
 @login_required
 def get_cxpayment():
-    # Claims and role checking logic stays the same
-    claims = get_jwt()
-    user_role = claims.get("role") 
-
-    if user_role != "admin":
-        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
-
     try:
-        # Pagination logic remains
+        # Get the customer ID from the request parameters
+        base_url = 'https://adebeo-crm1.onrender.com'
+        customer_id = request.args.get("customer_id")
+        
+        # Pagination parameters (page and limit)
+        #page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+        #limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
+         # Pagination logic remains
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
         skip = (page - 1) * per_page
-        
-        # Fetch records from the 'invoice_collection' without customer_id filter
-        payments = list(invoice_collection.find().skip(skip).limit(per_page))
 
-        # If no payments are found, return a message
-        if not payments:
+        # Ensure pagination values are valid
+        #if page < 1 or limit < 1:
+         #   return jsonify({"error": "Invalid page or limit"}), 400
+
+        # Calculate the skip value for MongoDB query (pagination offset)
+        #skip = (page - 1) * limit
+
+        # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
+        # invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
+        #     .sort("insertDate", -1) \
+        #     .skip(skip) \
+        #     .limit(limit)
+        invoices_cursor = list(invoice_collection.find().skip(skip).limit(per_page))
+
+        if not invoices_cursor:
             return jsonify({"message": "No payment data found."}), 404
 
-        # Calculate total pages based on total record count and per_page
+        # Convert the cursor to a list of invoices and handle PDF link
+        invoices = []
+        for invoice in invoices_cursor:
+            # Extract PDF filename and base_url (adjust field names based on your schema)
+            pdf_filename = invoice.get("pdf_filename", "")  # Default to empty string if not found
+            #base_url = invoice.get("base_url", "")  # Default to empty string if not found
+
+            # Construct PDF link
+            pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
+
+            # Build invoice data
+            invoice_data = {
+                "invoice_id": str(invoice["_id"]),
+                "invoice_number": str(invoice.get("invoice_number", "")),
+                "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
+                "total_amount": invoice.get("total_amount", 0),
+                "items": invoice.get("items", ""),
+                "payment_status":invoice.get("payment_status",""),
+                "amount_due":invoice.get("amount_due",0),
+                "pdf_link": pdf_link,
+                "base_url": base_url
+            }
+            invoices.append(invoice_data)
+
+        # Count total invoices for the customer to calculate total pages
+        #total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
+        # total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
         total_count = invoice_collection.count_documents({})
         total_pages = (total_count + per_page - 1) // per_page
 
-        # Clean up documents and remove '_id'
-        for payment in payments:
-            payment.pop('_id', None)
-
-        # Return payments with pagination metadata
+        # Return the invoices with pagination info
         return jsonify({
+            "payments": invoices,
             "current_page": page,
-            "payments": payments,
             "per_page": per_page,
             "total_count": total_count,
             "total_pages": total_pages
         }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logging.error(f"Error fetching invoices: {str(e)}")
+        return jsonify({"error": f"An error occurred while fetching invoices: {str(e)}"}), 500
+
+
+# @app.route('/get_cxpayment', methods=['GET'])
+# @login_required
+# def get_cxpayment():
+#     # Claims and role checking logic stays the same
+#     claims = get_jwt()
+#     user_role = claims.get("role") 
+
+#     if user_role != "admin":
+#         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#     try:
+#         # Pagination logic remains
+#         page = int(request.args.get('page', 1))
+#         per_page = int(request.args.get('per_page', 10))
+#         skip = (page - 1) * per_page
+        
+#         # Fetch records from the 'invoice_collection' without customer_id filter
+#         payments = list(invoice_collection.find().skip(skip).limit(per_page))
+
+#         # If no payments are found, return a message
+#         if not payments:
+#             return jsonify({"message": "No payment data found."}), 404
+
+#         # Calculate total pages based on total record count and per_page
+#         total_count = invoice_collection.count_documents({})
+#         total_pages = (total_count + per_page - 1) // per_page
+
+#         # Clean up documents and remove '_id'
+#         for payment in payments:
+#             payment.pop('_id', None)
+
+#         # Return payments with pagination metadata
+#         return jsonify({
+#             "current_page": page,
+#             "payments": payments,
+#             "per_page": per_page,
+#             "total_count": total_count,
+#             "total_pages": total_pages
+#         }), 200
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 ########################## Payment collection DB ###########################
 @app.route('/process_payment', methods=['POST'])
