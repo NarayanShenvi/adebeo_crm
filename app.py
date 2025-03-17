@@ -2715,7 +2715,7 @@ def get_purchase_orders():
 #     except Exception as e:
 #         logging.error(f"Error fetching purchase orders: {str(e)}")
 #         return jsonify({"error": f"An error occurred while fetching purchase orders: {str(e)}"}), 500
-
+#-----------------------------------------------------------------------------------------------------
 
 @app.route('/get_adebeo_orders', methods=['GET'])
 @login_required
@@ -2728,7 +2728,7 @@ def get_adebeo_orders():
     try:
         # Query the 'orders_collection' using the customer_ID and sort by product_name
         orders_data = orders_collection.find({"customer_id": customer_id}).sort("product_name", 1)
-        
+
         # Convert Mongo cursor to list and group orders
         orders_list = []
 
@@ -2739,7 +2739,7 @@ def get_adebeo_orders():
 
         if not orders_list:
             return jsonify({"message": "No orders found for this customer"}), 200
-        
+
         # Group orders by product_name
         grouped_orders = {}
 
@@ -2769,11 +2769,70 @@ def get_adebeo_orders():
             grouped_orders[product_name].append(order)
 
         # Return the grouped orders as a JSON response
-        return Response (json_util.dumps(grouped_orders), mimetype='application/json')
+        return jsonify(grouped_orders)
 
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
+# @app.route('/get_adebeo_orders', methods=['GET'])
+# @login_required
+# def get_adebeo_orders():
+#     customer_id = request.args.get('customer_ID')  # Get customer_ID from query parameter
+
+#     if not customer_id:
+#         return jsonify({"error": "customer_ID is required"}), 400
+
+#     try:
+#         # Query the 'orders_collection' using the customer_ID and sort by product_name
+#         orders_data = orders_collection.find({"customer_id": customer_id}).sort("product_name", 1)
+        
+#         # Convert Mongo cursor to list and group orders
+#         orders_list = []
+
+#         for order in orders_data:
+#             # Convert _id (ObjectId) to string for serialization
+#             order['_id'] = str(order['_id'])
+#             orders_list.append(order)
+
+#         if not orders_list:
+#             return jsonify({"message": "No orders found for this customer"}), 200
+        
+#         # Group orders by product_name
+#         grouped_orders = {}
+
+#         for order in orders_list:
+#             product_name = order.get('product_name')
+
+#             # If the product_name is not in the grouped_orders dictionary, create a new list for it
+#             if product_name not in grouped_orders:
+#                 grouped_orders[product_name] = []
+
+#             # Add the order to the corresponding product_name group
+#             proforma_id = order.get('proforma_id')
+
+#             # Get Invoice PDF link if the proforma_id is available
+#             if proforma_id:
+#                 # Query the invoice_collection with proforma_id to get the pdf_filename (Invoice PDF link)
+#                 invoice_data = invoice_collection.find_one({"proforma_id": proforma_id})
+
+#                 if invoice_data and 'pdf_filename' in invoice_data:  # Use pdf_filename from invoice collection
+#                     order['Invoice_PDF_link'] = invoice_data['pdf_filename']
+#                 else:
+#                     order['Invoice_PDF_link'] = None
+#             else:
+#                 order['Invoice_PDF_link'] = None
+
+#             # Add the order to the group for that product_name
+#             grouped_orders[product_name].append(order)
+
+#         # Return the grouped orders as a JSON response
+#         return Response (json_util.dumps(grouped_orders), mimetype='application/json')
+
+#     except Exception as e:
+#         print(f"Error: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
 
 
 ############################ CxPayment DB ############################
