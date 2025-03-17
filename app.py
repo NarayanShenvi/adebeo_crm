@@ -2491,45 +2491,45 @@ def create_purchase_orders():
         }
 
         # Generate the HTML
-        rendered_html = render_template(
-            "invoice_template.html",  # Create a similar template like "quote_template2.html"
-            invoice_number = invoice_number,
-            customer_name = customer["companyName"],
-            invoice_date = datetime.now().strftime('%Y-%m-%d'),
-            total_amount = total_amount,
-            amount_due = total_amount,
-            items = items,  # Use all items from the proforma for the invoice
-           # invoice = invoice_pdf_data,
+        # rendered_html = render_template(
+        #     "invoice_template.html",  # Create a similar template like "quote_template2.html"
+        #     invoice_number = invoice_number,
+        #     customer_name = customer["companyName"],
+        #     invoice_date = datetime.now().strftime('%Y-%m-%d'),
+        #     total_amount = total_amount,
+        #     amount_due = total_amount,
+        #     items = items,  # Use all items from the proforma for the invoice
+        #    # invoice = invoice_pdf_data,
 
-            po_invoice = " ",
-            # performa_number=po_invoice["performa_number"],
-            date= datetime.now().strftime('%Y-%m-%d'),
-            #customer_name= customer.get("companyName", "N/A"),
-            customer_address=customer.get("address", "N/A"),
-            customer_email=customer.get("primaryEmail", "N/A"),
-            customer_phone=customer.get("mobileNumber", "N/A"),
-            customer_gstin = customer.get("companyGstin",'-'),
-            company_name = company_name,
-            company_address=company_address,
-            products=proforma["items"],
-          #  preformaTag=po_invoice["preformaTag"],
-            base_url= base_url,
-            total_sum = sum(item.get('sub_total', 0) for item in request.json['items']),
-            amount_in_words  = num2words(total_amount),
-            gross_total = total_amount,
-            addl_discount = 0,
-            company_gstin = company_gstin,
-            company_account_no1 =company_account_no1,
-            company_bankbranch1 =company_bankbranch1,
-            company_ifsc1 = company_ifsc1,
-            company_swift1 = company_swift1,
-            company_pan = company_pan,
-            notes = invoice_note1,
-            company_payee= company_payee,
-            company_email= company_email,
-            company_contact=company_contact
+        #     po_invoice = " ",
+        #     # performa_number=po_invoice["performa_number"],
+        #     date= datetime.now().strftime('%Y-%m-%d'),
+        #     #customer_name= customer.get("companyName", "N/A"),
+        #     customer_address=customer.get("address", "N/A"),
+        #     customer_email=customer.get("primaryEmail", "N/A"),
+        #     customer_phone=customer.get("mobileNumber", "N/A"),
+        #     customer_gstin = customer.get("companyGstin",'-'),
+        #     company_name = company_name,
+        #     company_address=company_address,
+        #     products=proforma["items"],
+        #   #  preformaTag=po_invoice["preformaTag"],
+        #     base_url= base_url,
+        #     total_sum = sum(item.get('sub_total', 0) for item in request.json['items']),
+        #     amount_in_words  = num2words(total_amount),
+        #     gross_total = total_amount,
+        #     addl_discount = 0,
+        #     company_gstin = company_gstin,
+        #     company_account_no1 =company_account_no1,
+        #     company_bankbranch1 =company_bankbranch1,
+        #     company_ifsc1 = company_ifsc1,
+        #     company_swift1 = company_swift1,
+        #     company_pan = company_pan,
+        #     notes = invoice_note1,
+        #     company_payee= company_payee,
+        #     company_email= company_email,
+        #     company_contact=company_contact
 
-            )
+        #     )
 
              # Log the HTML that will be converted to PDF
         #logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
@@ -2540,7 +2540,7 @@ def create_purchase_orders():
         #local_pdf_folder = './static/pdf'
         #os.makedirs(local_pdf_folder, exist_ok=True)
         # commented to check the speed issue
-        pdf_filename = f"invoice_{invoice_number}.pdf"
+        ##pdf_filename = f"invoice_{invoice_number}.pdf"
         #local_pdf_folder = './static/pdf'  # Local folder for testing
         #os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
         #local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
@@ -2552,25 +2552,25 @@ def create_purchase_orders():
         #    logging.error(f"Error saving local PDF: {str(e)}")
 
         # Remote file save (on Render persistent disk)
-        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
-        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
-        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+        ##remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+        ##os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+        ##remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
 
-        try:
-            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
-            # Check if the file was saved successfully
-            if os.path.exists(remote_pdf_file_path):
-                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
-            else:
-                logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
-        except Exception as e:
-            logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+        ##try:
+        ##    HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+        ##    # Check if the file was saved successfully
+        ##    if os.path.exists(remote_pdf_file_path):
+        ##        logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+        ##    else:
+        ##        logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        ##except Exception as e:
+        ##    logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
         
         # Update the invoice record in DB with the path to the saved PDF
-        invoice_collection.update_one(
-            {"invoice_number": invoice_number},
-            {"$set": {"pdf_filename": pdf_filename}}
-        )
+        ##invoice_collection.update_one(
+        ##    {"invoice_number": invoice_number},
+        ##    {"$set": {"pdf_filename": pdf_filename}}
+        ##)
         # this section is for generating Invoices--------------------------------------------------
         ### customer Payment Initiate =========================================
             # For customer payments
