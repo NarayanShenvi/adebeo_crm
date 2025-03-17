@@ -2380,7 +2380,7 @@ def create_purchase_orders():
             )
 
              # Log the HTML that will be converted to PDF
-            logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+            #logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
 
              # Generate a random UUID for the file name
             pdf_filename = f"purchase_order_{po_number}.pdf"
@@ -2499,9 +2499,9 @@ def create_purchase_orders():
             total_amount = total_amount,
             amount_due = total_amount,
             items = items,  # Use all items from the proforma for the invoice
-            invoice = invoice_pdf_data,
+           # invoice = invoice_pdf_data,
 
-            po_invoice = invoice_pdf_data,
+            po_invoice = " ",
             # performa_number=po_invoice["performa_number"],
             date= datetime.now().strftime('%Y-%m-%d'),
             #customer_name= customer.get("companyName", "N/A"),
@@ -2532,7 +2532,7 @@ def create_purchase_orders():
             )
 
              # Log the HTML that will be converted to PDF
-        logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+        #logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
 
              # Generate a random UUID for the file name
        
