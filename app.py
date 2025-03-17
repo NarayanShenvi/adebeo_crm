@@ -2393,14 +2393,14 @@ def create_purchase_orders():
             #HTML(string=rendered_html).write_pdf(local_pdf_file_path)
 
             # Local file save (for debugging purposes)
-            local_pdf_folder = './static/pdf'  # Local folder for testing
-            os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
-            local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
-            try:
-                HTML(string=rendered_html).write_pdf(local_pdf_file_path)
-                logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
-            except Exception as e:
-                logging.error(f"Error saving local PDF: {str(e)}")
+            #local_pdf_folder = './static/pdf'  # Local folder for testing
+            #os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+            #local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+            #try:
+            #    HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            #    logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+            #except Exception as e:
+            #    logging.error(f"Error saving local PDF: {str(e)}")
 
             # Remote file save (on Render persistent disk)
             remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
@@ -2539,22 +2539,17 @@ def create_purchase_orders():
         # Define PDF output path
         #local_pdf_folder = './static/pdf'
         #os.makedirs(local_pdf_folder, exist_ok=True)
+        # commented to check the speed issue
         pdf_filename = f"invoice_{invoice_number}.pdf"
+        #local_pdf_folder = './static/pdf'  # Local folder for testing
+        #os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
         #local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
-
-        # Generate PDF from HTML
-        #HTML(string=rendered_html).write_pdf(local_pdf_file_path)
-
-
-        # Local file save (for debugging purposes)
-        local_pdf_folder = './static/pdf'  # Local folder for testing
-        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
-        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
-        try:
-            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
-            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
-        except Exception as e:
-            logging.error(f"Error saving local PDF: {str(e)}")
+        
+        #try:
+        #    HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+        #    logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        #except Exception as e:
+        #    logging.error(f"Error saving local PDF: {str(e)}")
 
         # Remote file save (on Render persistent disk)
         remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
