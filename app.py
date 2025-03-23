@@ -2854,6 +2854,7 @@ def get_adebeo_orders():
         return jsonify({"error": "customer_ID is required"}), 400
 
     try:
+        base_url = 'https://adebeo-crm1.onrender.com'
         # Query the 'orders_collection' using the customer_ID and sort by product_name
         orders_data = orders_collection.find({"customer_id": customer_id}).sort("product_name", 1)
 
@@ -2888,6 +2889,7 @@ def get_adebeo_orders():
 
                 if invoice_data and 'pdf_filename' in invoice_data:  # Use pdf_filename from invoice collection
                     order['Invoice_PDF_link'] = f"/static/pdf/{invoice_data['pdf_filename']}" #invoice_data['pdf_filename']
+                    order['base_url'] = base_url
                 else:
                     order['Invoice_PDF_link'] = None
             else:
