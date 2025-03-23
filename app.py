@@ -2584,6 +2584,7 @@ def create_purchase_orders():
             # For customer payments
         customer_payment_data = {
             "customer_id": customer_id,
+            "customer_name":customer["companyName"],
             "invoice_number": invoice_number,
             "total_amount": total_amount,
             "paid_amount": 0,
@@ -3012,6 +3013,7 @@ def get_cxpayment():
             invoice_data = {
                 "invoice_id": str(invoice["_id"]),
                 "invoice_number": str(invoice.get("invoice_number", "")),
+                "customer_name":invoice.get("customer_name",""),
                 "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
                 "total_amount": invoice.get("total_amount", 0),
                 "items": invoice.get("items", ""),
