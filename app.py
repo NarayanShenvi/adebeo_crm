@@ -2327,7 +2327,7 @@ def create_purchase_orders():
                 "vendor_address": vendor_address,
                 "quantity": quantity,
                 "purchase_price": revised_purchase_price,
-                "total_amount": total_amount,
+                "total_amount": total_amount*1.18,
                 "date": datetime.now(ZoneInfo("Asia/Kolkata")),
                 "status": "Pending",  # Or set an initial status
                 "proforma_id": performa_number,
@@ -2477,7 +2477,7 @@ def create_purchase_orders():
             "customer_name": customer["companyName"],
             "proforma_id": performa_number,  
             "total_amount": proforma["total_amount"],
-            "amount_due": total_amount,
+            "amount_due": proforma["total_amount"],
             "payment_status": "Pending",
             "items":proforma["items"],
             "invoice_date": datetime.now(),
@@ -2887,7 +2887,7 @@ def get_adebeo_orders():
                 invoice_data = invoice_collection.find_one({"proforma_id": proforma_id})
 
                 if invoice_data and 'pdf_filename' in invoice_data:  # Use pdf_filename from invoice collection
-                    order['Invoice_PDF_link'] = invoice_data['pdf_filename']
+                    order['Invoice_PDF_link'] = f"/static/pdf/{invoice_data['pdf_filename']}" #invoice_data['pdf_filename']
                 else:
                     order['Invoice_PDF_link'] = None
             else:
