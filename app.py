@@ -612,6 +612,7 @@ def create_adebeo_products():
 	        "prodisEnabled":request.json.get("prodisEnabled"),
 	        "insertBy": username,
 	        "insertDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
+            "subscriptionDuration":request.json.get("subscriptionDuration")
 	     #   "modifiedBy":request.json.get("productName")
 	     #   "modifiedDate":request.json.get("productName")
         }
@@ -707,6 +708,7 @@ def update_adebeo_product(id: str):
 	    #   "insertDate":datetime.utcnow()
 	        "modifiedBy":username,
 	        "modifiedDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
+            "subscriptionDuration":request.json.get("subscriptionDuration")
         }
 
         # Remove fields that are None
@@ -1197,7 +1199,7 @@ def adebeo_create_quotes():
             about_us = cleaned_document.get("about_us", "No information available.")
             terms1 = cleaned_document.get("terms1", "No terms available.")
             products = cleaned_document.get("products", "No products information available.")
-            company_name = cleaned_document.get("products", "Adebeo")
+            company_name = cleaned_document.get("company_name","Adebeo")
             company_address = cleaned_document.get("company_address", "Bangalore")
             company_contact = cleaned_document.get("company_contact", "9008513444")
             company_email = cleaned_document.get("company_email", "narayan@adebeo.co.in")
@@ -1264,6 +1266,10 @@ def adebeo_create_quotes():
             products=quote_data["products"],
             terms=quote_data["terms"],
             gross_total = quote_data["total_amount"],
+            company_name = "Adebeo",
+            company_email = quote_data["company_email"],
+            company_address = "J.P Nagar, Bangalore",
+            company_contact = quote_data["company_contact"],
             base_url = base_url #'http://127.0.0.1:5000' 
         )
 
@@ -1684,7 +1690,7 @@ def create_performa():
 
 
 
-@app.route('/create_invoice', methods=['POST'])
+@app.route('/create_invoice', methods=['POST']) 
 @login_required
 def create_invoice():
     try:
@@ -1872,6 +1878,7 @@ def get_performas():
                 "performa_date": performa.get("insertDate", "").strftime('%Y-%m-%d') if performa.get("insertDate") else "",
                 "total_amount": performa.get("total_amount", 0),
                 "items": performa.get("items", ""),
+                "preformaTag":performa.get("preformaTag"),
                 "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
                 "base_url": base_url
             }
@@ -2469,7 +2476,7 @@ def create_purchase_orders():
             "customer_id": customer_id,
             "customer_name": customer["companyName"],
             "proforma_id": performa_number,  
-            "total_amount": total_amount,
+            "total_amount": proforma["total_amount"],
             "amount_due": total_amount,
             "payment_status": "Pending",
             "items":proforma["items"],
@@ -2477,6 +2484,7 @@ def create_purchase_orders():
             "payment_method": "",  # You can update this when the payment is made
             "payment_reference": "",
             "due_date": None,  # Set the due date if necessary
+            "po_number":po_number,
         }
         # Save to Invoice DB
         invoice_collection.insert_one(invoice_data)
@@ -2602,6 +2610,123 @@ def create_purchase_orders():
         logging.error(f"Error creating Purchase Orders: {str(e)}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
+@app.route('/generate_invoice_pdf/<invoice_number>', methods=["POST"])
+@login_required
+def generate_invoice_pdf(invoice_number):
+    try:
+        base_url = 'https://adebeo-crm1.onrender.com'
+        # Fetch the invoice data
+        invoice = adebeo_invoice_collection.find_one({"invoice_number": invoice_number})
+        if not invoice:
+            return jsonify({"error": "Invoice not found"}), 404
+        
+        # Fetch customer information using customer_id from the invoice
+        customer_id = invoice.get("customer_id", "0")
+        customer = None
+
+        if customer_id != "0":
+            customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+
+        # Fetch company information
+        company_document = company_datas.find_one({})
+        if company_document:
+            # Clean the company data
+            cleaned_document = {key.strip('\"'): value for key, value in company_document.items()}
+
+            about_us = cleaned_document.get("about_us", "No information available.")
+            terms1 = cleaned_document.get("terms1", "No terms available.")
+            products = cleaned_document.get("products", "No products information available.")
+            company_name = cleaned_document.get("company_name", "Adebeo")
+            company_address = cleaned_document.get("company_address", "Bangalore")
+            company_contact = cleaned_document.get("company_contact", "9008513444")
+            company_email = cleaned_document.get("company_email", "narayan@adebeo.co.in")
+            company_gstin = cleaned_document.get("company_gstin", "-")
+            company_account_no1 = cleaned_document.get("company_account1", " ")
+            company_bankbranch1 = cleaned_document.get("company_bankbranch1", " ")
+            company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
+            company_swift1 = cleaned_document.get("company_swift1", "-")
+            company_pan = cleaned_document.get("company_pan", "-")
+            invoice_note1 = cleaned_document.get("invoice_note1", " ")
+            company_payee = cleaned_document.get("company_payee", " ")
+        else:
+            return jsonify({"error": "Company details not found"}), 404
+
+        # Prepare invoice details (items, total amounts, etc.)
+        total_amount = invoice["total_amount"]
+        items = invoice["items"]
+
+        # Render the HTML template with dynamic data
+        rendered_html = render_template(
+            "invoice_template.html", 
+            performa_number=invoice_number,
+            customer_name=customer.get("companyName", "N/A"),
+            date=datetime.now().strftime('%Y-%m-%d'),
+            total_sum=sum(item.get('sub_total', 0) for item in items),
+            products=items,  # Use all items from the invoice
+            company_name=company_name,
+            company_address=company_address,
+            company_contact=company_contact,
+            company_email=company_email,
+            company_gstin=company_gstin,
+            company_account_no1=company_account_no1,
+            company_bankbranch1=company_bankbranch1,
+            company_ifsc1=company_ifsc1,
+            company_swift1=company_swift1,
+            company_pan=company_pan,
+            notes=invoice_note1,
+            company_payee=company_payee,
+            base_url =base_url,
+            po_invoice = invoice,
+            addl_discount = 0, #just added
+            gross_total = total_amount
+          
+        )
+        pdf_filename = f"invoice_{uuid.uuid4()}.pdf"
+
+         # Local file save (for debugging purposes)
+        local_pdf_folder = './static/pdf'  # Local folder for testing
+        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        try:
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving local PDF: {str(e)}")
+
+        # Remote file save (on Render persistent disk)
+        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+        try:
+            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+                # Check if the file was saved successfully
+            if os.path.exists(remote_pdf_file_path):
+                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+            else:
+               logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        except Exception as e:
+                logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+
+        # Update the PO document with the PDF file path
+        adebeo_invoice_collection.update_one(
+            {"invoice_number": invoice_number},  # Match by invoice_number
+                {
+                    "$set": {  # Use $set to specify the fields to update
+                        "pdf_filename": pdf_filename,  # Update pdf_filename field
+                        "invoiced_date": datetime.now().strftime('%Y-%m-%d')  # Update invoiced_date field
+                    }
+                }    
+        )
+        return jsonify({"message": "PDF generated successfully", "file_path": local_pdf_file_path}), 200
+
+    except Exception as e:
+        logging.error(f"Error generating PDF: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/get_purchase_orders", methods=["GET"])
 @login_required
 def get_purchase_orders():
@@ -2627,7 +2752,9 @@ def get_purchase_orders():
 
         # Query to fetch purchase orders with pagination
         skip = (page - 1) * rows_per_page
-        orders_cursor = adebeo_purchase_order_collection.find().skip(skip).limit(rows_per_page)
+        #orders_cursor = adebeo_purchase_order_collection.find().skip(skip).limit(rows_per_page)
+        orders_cursor = adebeo_purchase_order_collection.find().sort("date", -1)  # Sort by insertDate, descending
+        orders_cursor = orders_cursor.skip(skip).limit(rows_per_page)
 
         total_orders = adebeo_purchase_order_collection.count_documents({})
         total_pages = (total_orders + rows_per_page - 1) // rows_per_page  # Calculate total pages
@@ -2959,6 +3086,7 @@ def get_cxpayment():
 #         return jsonify({"error": str(e)}), 500
 
 ########################## Payment collection DB ###########################
+
 @app.route('/process_payment', methods=['POST'])
 @login_required
 def process_payment():

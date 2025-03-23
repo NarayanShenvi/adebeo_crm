@@ -2,21 +2,24 @@
 <html>
 <head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <title>PO_Invoice</title>
+    <title>Po Invoice</title>
     <style>
-        body {
+       body {
             font-family:"Shippori Mincho B1", "Times New Roman", serif;
             margin: 0;
-            padding: 30px;
+            padding-top: 30px;
             background-color: white;
         }
+        @page {
+    margin: 10px; /* Removes default page margins */
+}
         header {
             color: #000000;
-            padding: 15px 15px;
+            padding:15px;
             background-color: #ebe8e8; /* Dark background for contrast */
-            margin-bottom: 18px;
             display: flex;
             justify-content: space-between;
+            margin-top: -60px;
         }
         header img {
             height: 60px;
@@ -24,25 +27,25 @@
         }
         header h1 {
             color: #000000d7;
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             word-spacing: 6px;
         }
         
-        .com
-        {
+        .com{
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
             overflow: hidden;  
-            margin-bottom: 15px; 
+            margin-top: 15px;
+            margin-bottom: -17px;
         }
 .com strong {
     color: #1f1d1d;
     font-size: 15px;
     font-weight: bold;
     display: block;
-    margin-bottom: -12px; /* Decrease the gap */
+    margin-bottom: -16px; /* Decrease the gap */
 }
 .placeholder {
     color: #242424; /* Light gray */
@@ -57,7 +60,6 @@
 .com td {
     margin-top: -50px;
     font-size: 13px; /* Adjust text size */
-    line-height: 1.5; /* Space between lines */
     word-wrap: break-word; /* Ensures long words break properly */
     white-space: normal; /* Allows text to wrap */
     color: #525151;
@@ -76,16 +78,21 @@
 .po_invoice-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed; /* Ensures even column spacing */
     margin-top: 25px;
+    table-layout: fixed; /* Ensures even column spacing */
 }
-
+.po_invoice-table th, 
+.po_invoice-table td {
+    padding: 10px;
+    text-align: left;
+    max-width: 150px;
+}
 /* Table header styling */
 .po_invoice-table th {
     background-color: #b4b4b4; /* Light gray for better contrast */
     color: #000; /* Black text for visibility */
     font-size: 13px;
-    padding: 10px;
+    padding: 8px;
     text-align: left;
     border-bottom: 2px solid white;
     word-wrap: break-word; /* Breaks long words */
@@ -98,8 +105,8 @@
     word-wrap: break-word; /* Breaks long words */
     white-space: normal; /* Allows wrapping */
     overflow-wrap: break-word; /* Ensures breaking */
-    padding: 10px;
-    font-size: 13px;
+    padding: 8px;
+    font-size: 12px;
     color: #242424; /* Light gray */
     font-weight: bold;
     border-bottom: 2px solid rgb(255, 255, 255);
@@ -109,7 +116,7 @@
 /* Adjusting column widths */
 .po_invoice-table th:nth-child(1), /* Bill To */
 .po_invoice-table td:nth-child(1) {
-    width: 20%; /* Increase width */
+    width: 25%; /* Increase width */
 }
 
 .po_invoice-table th:nth-child(2), /* Place of Supply */
@@ -119,17 +126,17 @@
 
 .po_invoice-table th:nth-child(3), /* Invoice No */
 .po_invoice-table td:nth-child(3) {
-    width: 15%;
+    width: 13%;
 }
 
 .po_invoice-table th:nth-child(4), /* PO Ref */
 .po_invoice-table td:nth-child(4) {
-    width: 15%;
+    width: 10%;
 }
 
 .po_invoice-table th:nth-child(5), /* Date */
 .po_invoice-table td:nth-child(5) {
-    width: 15%;
+    width: 10%;
 }
 
 /* Styling for table-container */
@@ -138,14 +145,13 @@
     display: flex;
     flex-direction: column; /* Stacks tables vertically */
     align-items: flex-end; /* Aligns the summary table to the right */
-    margin-top: 20px;
+    margin-top: 10px;
 }
 
 /* Styling for po_invoice-details */
 .po_invoice-details {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 25px;
     table-layout: fixed; /* Ensures even column spacing */
 }
 
@@ -153,6 +159,7 @@
 .po_invoice-details td {
     padding: 10px;
     text-align: left;
+    max-width: 150px;
 }
 
 .po_invoice-details th {
@@ -202,9 +209,9 @@
 
 /* Styling for summary-table*/
 .summary-table {
-    width: 400px; /* Adjust width as needed */
+    width: 300px; /* Adjust width as needed */
     border-collapse: collapse;
-    margin-top: 26px; /* Space between order table and summary table */
+    margin-top: 6px; /* Space between order table and summary table */
 }
 
 .summary-table td {
@@ -234,14 +241,12 @@
 .bank {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 33px;
 }
 
 .bank td {
     vertical-align: top;
     width: 50%;
     font-size: 13px; /* Adjust text size */
-    line-height: 1.5; /* Space between lines */
     word-wrap: break-word; /* Ensures long words break properly */
     color: #525151;
     white-space: normal; /* Allows text to break into multiple lines */
@@ -289,19 +294,49 @@
 .bank i {
     margin-right: 5px;
 }
-
-/* Note styling */
-.note {
-    margin-top: 30px;
+.bank {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
 }
 
+.bank td {
+    vertical-align: top; /* Ensures top alignment */
+    padding: 10px;
+}
+.info-row {
+    display: flex;
+    align-items: flex-start; /* Align label with the first line */
+    gap: 8px; /* Space between label and value */
+    margin-top: 5px;
+    flex-wrap: wrap; /* Allows content to wrap */
+}
+
+.info-row .placeholder {
+    min-width: 150px; /* Adjust width to keep labels aligned */
+    text-align: left;
+    flex-shrink: 0; /* Prevents label from wrapping */
+    font-weight: bold;
+    white-space: nowrap; /* Ensures label stays on one line */
+}
+
+.info-row span {
+    flex: 1; /* Allows content to take available space */
+    word-break: break-word; /* Ensures long words break properly */
+    white-space: pre-wrap; /* Allows text to wrap without shifting label */
+    overflow-wrap: break-word;
+}
+
+
+/* Note styling */
 .note h3 {
     display: block;
     font-size: 15px;
     font-weight: bold;
-    margin-bottom: 8px;
     color: #1f1d1d;
     text-align: left;
+    margin-bottom: -10px;
+    margin-top: 5px;
 }
 
 .note h3::before {
@@ -309,59 +344,51 @@
     font-family: "Font Awesome 5 Free";
     margin-right: 8px;
 }
-.notes p {
+.note p {
         white-space: pre-line; /* This will respect the newlines */
         word-wrap: break-word; /* Ensure no word overflow */
         overflow-wrap: break-word; /* To make sure long words break properly */
 		}
-
-.note ul {
-    padding-left: 71px; /* Indent list */
-    margin: 5px 0;
-    list-style: none; /* Remove default bullets */
-}
-
-.note li {
+.note {
+    position: absolute;
+    bottom: 40px;
+    left: 0;
+    background-color: #f8f8f8; /* Light background for contrast */
     font-size: 14px;
-    line-height: 1.5; /* Space between lines */
+    width: 100%;
     word-wrap: break-word; /* Ensures long words break properly */
     color: #525151;
     white-space: normal; /* Allows text to break into multiple lines */
-    text-align: left;
-    margin-bottom: 5px;
-    position: relative;
+    text-align: left;    
+    border-top: 1px solid #ddd;
 }
+ footer {
+            background-color: #ebe8e8;
+            color: #242323;
+            text-align: center;
+            padding: 2px 5px;
+            font-size: 14px;
+            font-weight: 400;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
-.note li::before {
-    content: "☛"; 
-    font-size: 14px;
-    position: absolute;
-    left: -19px;
-    top: 2px;
-}
+        footer p {
+            margin: 0;
+            padding: 5px 0;
+            line-height: 1.6;
+            color: #3b3b3a;
+        }
 
-footer {
-    background-color: #ebe8e8; /* Dark background for contrast */
-    color: #ffffff; /* White text for readability */
-    text-align: center; /* Center align content */
-    padding: 5px 5px; /* Proper spacing */
-    font-size: 14px; /* Optimal text size */
-    font-weight: 400;
-    margin-top: 40px;
-}
-
-footer p {
-    margin: 0;
-    padding: 5px 0;
-    line-height: 1.6;
-    color: #3b3b3a; /* Highlight company name with gold */
-}
-
-footer strong {
-    font-weight: bold;
-    color: #333331; /* Highlight company name with gold */
-}
-
+        footer strong {
+            font-weight: bold;
+            color: #333331;
+        }
 
     </style>
 </head>
@@ -395,7 +422,7 @@ footer strong {
         <tr>
             <th>Bill To</th>
             <th>Place of Supply</th>
-            <th>po_invoice No.</th>
+            <th>PO_invoice No.</th>
             <th>PO Ref</th>
             <th>Date</th>
         </tr>
@@ -480,26 +507,31 @@ footer strong {
             <td class="left-column">
                 <strong><i class="fa-solid fa-indian-rupee-sign"></i> Amount Chargeable:</strong>
                 <div class="info-row">
-                    <span class="placeholder">Amount in Words:</span> 
-						<span>{{ amount_in_words }}</span>
+                    <span class="placeholder">Amount in Words:</span><br>
+                    <span>{{ amount_in_words }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">Company PAN:</span> <span>{{ company_pan }}</span>
+                    <span class="placeholder">Company PAN:</span><br>
+                    <span>{{ company_pan }}</span>
                 </div>
             </td>
             <td class="right-column">
                 <strong><i class="fas fa-university"></i> Bank Details:</strong>
                 <div class="info-row">
-                    <span class="placeholder">Current A/C No:</span> <span>{{ company_account_no1 }}</span>
+                    <span class="placeholder">Current A/C No:</span><br>
+                    <span>{{ company_account_no1 }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">Payee Name:</span> <span>{{ company_payee }}</span>
+                    <span class="placeholder">Payee Name:</span><br>
+                    <span>{{ company_payee }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">IFSC Code:</span> <span>{{ company_ifsc1 }}</span>
+                    <span class="placeholder">IFSC Code:</span><br>
+                    <span>{{ company_ifsc1 }}</span>
                 </div>
                 <div class="info-row">
-                    <span class="placeholder">Branch Name:</span> <span>{{ company_bankbranch1 }}</span>
+                    <span class="placeholder">Branch Name:</span><br>
+                    <span>{{ company_bankbranch1 }}</span>
                 </div>
             </td>
         </tr>

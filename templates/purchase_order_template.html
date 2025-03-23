@@ -4,19 +4,18 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <title>Purchase Order</title>
     <style>
-        body {
-            font-family:"Shippori Mincho B1", "Times New Roman", serif;
+        body {     font-family:"Shippori Mincho B1", "Times New Roman", serif;
             margin: 0;
-            padding: 30px;
+            padding-top: 30px;
             background-color: white;
         }
         header {
             color: #000000;
             padding: 15px 15px;
             background-color: #ebe8e8; /* Dark background for contrast */
-            margin-bottom: 18px;
             display: flex;
             justify-content: space-between;
+            margin-top: -60px;
         }
         header img {
             height: 60px;
@@ -24,11 +23,10 @@
         }
         header h1 {
             color: #000000d7;
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             word-spacing: 6px;
         }
-        
 .ven{
     width: 100%;
     border-collapse: collapse;
@@ -80,13 +78,22 @@
 /* Styling for invoice table */
 .client-goods-table {
     width: 100%;
-    border-collapse: collapse;
-    margin-top: 25px;
-}
+            border-collapse: collapse;    
+            table-layout: fixed; /* Ensure columns are of fixed size */
+            overflow: hidden;
+            max-height: 300px; /* Optional: Limit    table height */
+            font-family:"Shippori Mincho B1", "Times New Roman", serif;
+            margin-top: 10px;
+        }
+
 
 .client-goods-table td, .client-goods-table th {
-    padding: 10px;
-    text-align: left;
+    padding: 8px;
+            text-align: left;
+            border: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
 }
 .client-goods-table th {
     font-weight: bold;
@@ -112,25 +119,20 @@
 
 /* Column Widths */
 .client-goods-table th:nth-child(1), 
-.client-goods-table td:nth-child(1) { width: 5%; }  /* SL - Small */
+table td:nth-child(1) { width: 5%; }  /* SL - Small */
 
 .client-goods-table th:nth-child(2), 
-.client-goods-table td:nth-child(2) { width: 40%; }  /* Product Description - Wide */
-
+.client-goods-table td:nth-child(2) { width: 25%; }  /* Product Description - Wide */
 .client-goods-table th:nth-child(3), 
-.client-goods-table td:nth-child(3) { width: 10%; }  /* Quantity */
-
+.client-goods-table td:nth-child(3) { width: 9%; }
 .client-goods-table th:nth-child(4), 
-.client-goods-table td:nth-child(4) { width: 10%; }  /* Unit Price */
-
+.client-goods-table td:nth-child(4) { width: 12%; }
 .client-goods-table th:nth-child(5), 
-.client-goods-table td:nth-child(5) { width: 15%; }  /* Gross Total */
-
+.client-goods-table td:nth-child(5) { width: 8%;; }
 .client-goods-table th:nth-child(6), 
-.client-goods-table td:nth-child(6) { width: 10%; }  /* Taxes */
-
+.client-goods-table td:nth-child(6) { width: 12%; }
 .client-goods-table th:nth-child(7), 
-.client-goods-table td:nth-child(7) { width: 10%; }  /* Net Total */
+.client-goods-table td:nth-child(7) { width: 12%; }
 
 
 
@@ -220,21 +222,42 @@
     left: -19px;
     top: 2px;
 }
-
+.note {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: #f8f8f8; /* Light background for contrast */
+    padding: 10px 15px;
+    font-size: 14px;
+    line-height: 1.5; /* Space between lines */
+    word-wrap: break-word; /* Ensures long words break properly */
+    color: #525151;
+    white-space: normal; /* Allows text to break into multiple lines */
+    text-align: left;    border-top: 1px solid #ddd;
+}
 footer {
     background-color: #ebe8e8; /* Dark background for contrast */
-    color: #ffffff; /* White text for readability */
-    text-align: center; /* Center align content */
+    color: #242323; /* White text for readability */
+    text-align: center; /* Center align text */
     padding: 5px 5px; /* Proper spacing */
     font-size: 14px; /* Optimal text size */
     font-weight: 400;
-    margin-top: 40px;
+    position: fixed; /* Keep at the bottom */
+    bottom: 0; /* Stick to bottom */
+    left: 0;
+    width: 100%; /* Full width */
+    display: flex;
+    justify-content: center; /* Centers content */
+    align-items: center; /* Aligns vertically */
 }
+
 
 footer p {
     margin: 0;
     padding: 5px 0;
     line-height: 1.6;
+	text-align: center;
     color: #3b3b3a; /* Highlight company name with gold */
 }
 
