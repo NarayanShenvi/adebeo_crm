@@ -2888,12 +2888,12 @@ def get_adebeo_orders():
                 invoice_data = invoice_collection.find_one({"proforma_id": proforma_id})
 
                 if invoice_data and 'pdf_filename' in invoice_data:  # Use pdf_filename from invoice collection
-                    order['Invoice_PDF_link'] = f"/static/pdf/{invoice_data['pdf_filename']}" #invoice_data['pdf_filename']
+                    order['pdf_link'] = f"/static/pdf/{invoice_data['pdf_filename']}" #invoice_data['pdf_filename']
                     order['base_url'] = base_url
                 else:
-                    order['Invoice_PDF_link'] = None
+                    order['pdf_link'] = None
             else:
-                order['Invoice_PDF_link'] = None
+                order['pdf_link'] = None
 
             # Add the order to the group for that product_name
             grouped_orders[product_name].append(order)
