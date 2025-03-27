@@ -1640,7 +1640,8 @@ def create_performa():
             notes = invoice_note1,
             company_payee= company_payee,
             company_email= company_email,
-            company_contact=company_contact
+            company_contact=company_contact,
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'
            
             #customer_name = po_invoice["customer_name"]+" \n"+po_invoice["customer_address"]
         )
