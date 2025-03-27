@@ -1168,7 +1168,7 @@ def adebeo_create_quotes():
         base_url = 'https://adebeo-crm1.onrender.com' 
         
         # Image URL
-        logo_url = 'https://adebeo-crm1.onrender.com/static/logo.png' #
+        local_image_path ='https://adebeo-crm1.onrender.com/static/logo.png' # modified
 
         # Step 1: Download the image and save it locally
         # image_response = requests.get(logo_url, timeout=60)  # Timeout to handle slow network
@@ -1183,7 +1183,7 @@ def adebeo_create_quotes():
     #try:
         # Getting the username of the logged-in user
         username = request.user
-        base_url = 'https://adebeo-crm1.onrender.com' 
+        #base_url = 'https://adebeo-crm1.onrender.com' 
         # Ensure required fields are present in the incoming request
         required_fields = ["customer_id", "quoteTag", "items", "gross_total"]
         missing_fields = [field for field in required_fields if not request.json.get(field)]
