@@ -1168,18 +1168,18 @@ def adebeo_create_quotes():
         base_url = 'https://adebeo-crm1.onrender.com' 
         
         # Image URL
-        logo_url = 'https://adebeo-crm1.onrender.com/static/logo.png'
+        logo_url = 'https://adebeo-crm1.onrender.com/static/logo.png' #
 
         # Step 1: Download the image and save it locally
-        image_response = requests.get(logo_url, timeout=60)  # Timeout to handle slow network
-        if image_response.status_code == 200:
-            # Save the image locally in a 'static' folder
-            local_image_path = os.path.join('static', 'logo.png')
-            with open(local_image_path, 'wb') as f:
-                f.write(image_response.content)
-        else:
-            logging.error("Failed to fetch logo image.")
-            local_image_path = None
+        # image_response = requests.get(logo_url, timeout=60)  # Timeout to handle slow network
+        # if image_response.status_code == 200:
+        #     # Save the image locally in a 'static' folder
+        #     local_image_path = os.path.join('static', 'logo.png')
+        #     with open(local_image_path, 'wb') as f:
+        #         f.write(image_response.content)
+        # else:
+        #     logging.error("Failed to fetch logo image.")
+        #     local_image_path = None
     #try:
         # Getting the username of the logged-in user
         username = request.user
