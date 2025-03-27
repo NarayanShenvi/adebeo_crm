@@ -244,6 +244,11 @@
             font-weight: bold;
             color: #333331;
         }
+		.address-indent {
+        display: block;
+        margin-top: 0.5em; /* Adjust the space between the label and the address */
+        padding-left: 3ch;  /* 3 characters width indentation */
+    }
     </style>
 </head>
 <body>
@@ -265,7 +270,7 @@
             <h2><i class="fa fa-user-circle" aria-hidden="true"></i> Customer Details</h2>
             <div class="details-grid-customer">
                 <p><strong>Name:</strong> {{ customer_name }}</p>
-                <p><strong>Address:</strong> {{ customer_address }}</p>
+                <p><strong>Address:</strong><span class="address-indent">{{ customer_address }}</span></p>
                 <p><strong>Email:</strong> {{ customer_email }}</p>
                 <p><strong>Phone:</strong> {{ customer_phone }}</p>
             </div>
