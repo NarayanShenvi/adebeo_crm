@@ -1165,6 +1165,24 @@ def adebeo_create_quotes():
         # Getting the username of the logged-in user
         username = request.user
         base_url = 'https://adebeo-crm1.onrender.com' 
+        
+        # Image URL
+        logo_url = 'https://adebeo-crm1.onrender.com/static/logo.png'
+
+        # Step 1: Download the image and save it locally
+        image_response = requests.get(logo_url, timeout=30)  # Timeout to handle slow network
+        if image_response.status_code == 200:
+            # Save the image locally in a 'static' folder
+            local_image_path = os.path.join('static', 'logo.png')
+            with open(local_image_path, 'wb') as f:
+                f.write(image_response.content)
+        else:
+            logging.error("Failed to fetch logo image.")
+            local_image_path = None
+    #try:
+        # Getting the username of the logged-in user
+        username = request.user
+        base_url = 'https://adebeo-crm1.onrender.com' 
         # Ensure required fields are present in the incoming request
         required_fields = ["customer_id", "quoteTag", "items", "gross_total"]
         missing_fields = [field for field in required_fields if not request.json.get(field)]
@@ -1270,7 +1288,8 @@ def adebeo_create_quotes():
             company_email = quote_data["company_email"],
             company_address = "J.P Nagar, Bangalore",
             company_contact = quote_data["company_contact"],
-            base_url = base_url #'http://127.0.0.1:5000' 
+            base_url = base_url, #'http://127.0.0.1:5000'
+            logo_image =  local_image_path
         )
 
         # Log the HTML that will be converted to PDF
