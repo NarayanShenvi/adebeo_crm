@@ -245,11 +245,7 @@
 <body>
     <header>
         <!-- Use the passed logo image path or fallback to the base_url and Flask's url_for -->
-        {% if logo_image %}
-            <img src="{{ logo_image }}" alt="Company Logo">
-        {% else %}
-            <img src="{{ base_url + url_for('static', filename='logo.png') }}" alt="Company Logo">
-        {% endif %}
+             <img src="{{ logo_image }}" alt="Company Logo">
         <h1>QUOTE PROPOSAL</h1>
     </header>
 
