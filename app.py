@@ -22,6 +22,7 @@ from flask import send_from_directory
 import uuid
 from urllib.parse import unquote
 from num2words import num2words
+import requests
 
 
 # Set pymongo's log level to WARNING to avoid DEBUG logs from MongoDB
