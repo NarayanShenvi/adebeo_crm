@@ -1168,7 +1168,7 @@ def adebeo_create_quotes():
         base_url = 'https://adebeo-crm1.onrender.com' 
         
         # Image URL
-        local_image_path ='https://adebeo-crm1.onrender.com/static/logo.png' # modified
+        local_image_path ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png' #https://adebeo-crm1.onrender.com/static/logo.png' # modified
 
         # Step 1: Download the image and save it locally
         # image_response = requests.get(logo_url, timeout=60)  # Timeout to handle slow network
