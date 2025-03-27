@@ -1304,7 +1304,7 @@ def adebeo_create_quotes():
         os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
         local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
         try:
-            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path, timeout=60)
             logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
         except Exception as e:
             logging.error(f"Error saving local PDF: {str(e)}")
