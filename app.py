@@ -1171,7 +1171,7 @@ def adebeo_create_quotes():
         logo_url = 'https://adebeo-crm1.onrender.com/static/logo.png'
 
         # Step 1: Download the image and save it locally
-        image_response = requests.get(logo_url, timeout=30)  # Timeout to handle slow network
+        image_response = requests.get(logo_url, timeout=60)  # Timeout to handle slow network
         if image_response.status_code == 200:
             # Save the image locally in a 'static' folder
             local_image_path = os.path.join('static', 'logo.png')
