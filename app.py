@@ -2307,6 +2307,7 @@ def create_purchase_orders():
             purchase_price = float(item.get("purchase_cost", 0))
             contact =  item.get("contact", "-")
             email = item.get("email","-")
+            gstin = item.get("gstin","-")
             # Calculate the total amount (assuming the discount field is already available)
             discount = float(item.get("discount", 0))
             revised_purchase_price = purchase_price - discount
@@ -2403,8 +2404,8 @@ def create_purchase_orders():
             company_email = company_email,
             net_total_words = num2words(total_amount),
             base_url = base_url,
-            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'
-
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'   
+            gstin = gstin
             )
 
              # Log the HTML that will be converted to PDF
