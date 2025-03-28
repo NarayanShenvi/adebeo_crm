@@ -11,20 +11,22 @@
             background-color: white;
         }
         @page {
-    margin: 10px; /* Removes default page margins */
+    margin: 36px; /* Removes default page margins */
 }
-        header {
+header {
             color: #000000;
-            padding:15px;
+            padding: 15px;
             background-color: #ebe8e8; /* Dark background for contrast */
             display: flex;
             justify-content: space-between;
             margin-top: -60px;
         }
+
         header img {
             height: 60px;
             width: 58px;
         }
+
         header h1 {
             color: #000000d7;
             font-size: 20px;
@@ -254,15 +256,6 @@
     text-align: left;
 }
 
-/* Left and right columns */
-/* .left-column {
-    text-align: left;
-}
-
-.right-column {
-    text-align: right;
-} */
-
 /* Styling for strong tags (titles) */
 .bank strong {
     display: block;
@@ -349,6 +342,7 @@
         white-space: pre-line; /* This will respect the newlines */
         word-wrap: break-word; /* Ensure no word overflow */
         overflow-wrap: break-word; /* To make sure long words break properly */
+        margin-left: 20px;
 		}
 .note {
     position: absolute;
@@ -395,7 +389,7 @@
 </head>
 <body>
     <header>
-	 <img src="{{ base_url + url_for('static', filename='logo.png') }}" alt="Company Logo">
+	  <img src="{{ logo_image }}" alt="Company Logo" style="width: 190px; height:64px;">
      <h1>INVOICE</h1>
     </header>
 
@@ -434,17 +428,25 @@
             <td>{{ customer_name }}</td>
            <td>{{ customer_name }}</td>
             <td>{{ performa_number }}</td>
-            <td>{{ po_invoice.po_ref }}</td>
+            <td>{{ po_ref }}</td>
             <td>{{ date }}</td>
         </tr>
         <!-- Row 2: Customer Billing Name & Customer Billing Address -->
         <tr>
-			 <td>{{ customer_address }}</td>
-             <td>{{ customer_address }}</td>
+			<td>{{ customer_address }}</td>
+            <td>{{ customer_address }}</td>
+           <td>&nbsp;</td> <!-- Empty cell for po_invoice no -->
+           <td>&nbsp;</td> <!-- Empty cell for PO ref -->
+           <td>&nbsp;</td> <!-- Empty cell for Date -->
+        </tr>
+        <tr>
+            
+           <td>{{ customer_gstin }}</td>
+             <td>&nbsp;</td> <!-- Empty cell for po_place-of-supply -->
             <td>&nbsp;</td> <!-- Empty cell for po_invoice no -->
             <td>&nbsp;</td> <!-- Empty cell for PO ref -->
             <td>&nbsp;</td> <!-- Empty cell for Date -->
-        </tr>
+       </tr>
     </tbody>
 </table>
     
@@ -492,7 +494,7 @@
             </tr>
             <tr>
                 <td><strong>Tax:</strong></td>
-                <td>₹ {{(( total_sum - addl_discount)* 0.18 )|round(2) }}</td>
+                <td>₹ {{ ((total_sum - addl_discount) * 0.18) | round | int }}</td>
             </tr>
             <tr>
                 <td><strong>Grand Total:</strong></td>

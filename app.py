@@ -2402,8 +2402,8 @@ def create_purchase_orders():
             company_contact = company_contact,
             company_email = company_email,
             net_total_words = num2words(total_amount),
-            base_url = base_url
-        
+            base_url = base_url,
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'
 
             )
 
@@ -2703,8 +2703,8 @@ def generate_invoice_pdf(invoice_number):
             base_url =base_url,
             po_invoice = invoice,
             addl_discount = 0, #just added
-            gross_total = total_amount
-          
+            gross_total = total_amount,
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'
         )
         pdf_filename = f"invoice_{uuid.uuid4()}.pdf"
 
