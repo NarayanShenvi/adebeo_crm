@@ -2404,7 +2404,7 @@ def create_purchase_orders():
             company_email = company_email,
             net_total_words = num2words(total_amount),
             base_url = base_url,
-            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'   
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',   
             gstin = gstin
             )
 
