@@ -476,7 +476,9 @@ def update_adebeo_customer(id: str):
             "insta": data.get("insta"),
             "funnelType": data.get("funnelType"),
             "modifiedDate": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST,
-            "modifiedBy": username
+            "modifiedBy": username,
+            "area":data.get("area"),
+            "subArea":data.get("subArea")
         }
 
         # Remove fields that are None
@@ -771,7 +773,9 @@ def create_adebeo_customers():
             "insta": request.json.get("insta"),
             "funnelType": request.json.get("funnelType"),
             "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
-            "insertBy": username
+            "insertBy": username,
+            "area":request.json.get("area"),
+            "subArea":request.json.get("subArea")
         }
         
         # Insert the new user into the database
@@ -782,6 +786,7 @@ def create_adebeo_customers():
             "customer_id": str(result.inserted_id),  # Convert ObjectId to string
             "assigned_to": username,
             "assigned_date": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")  # Set to IST
+
         }
 
         adebeo_user_funnel.insert_one(funnel_entry)
@@ -1354,7 +1359,7 @@ def get_quotes():
     try:
         # Get pagination parameters from the request (default to page 1, 10 quotes per page)
         page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
+        per_page = int(request.args.get('per_page', 5))
         
         # Get customer_id from the request args (make sure it's provided)
         customer_id = request.args.get('customer_id')
@@ -1518,7 +1523,8 @@ def create_performa():
             items = quote["items"]
             total_amount = quote["total_amount"]
             terms = quote["terms"]
-            preformaTag = quote["quoteTag"] 
+            preformaTag = quote["quoteTag"]
+            refPoValue = request.json.get("refPoValue")
         else:
             # If no quote_number or quote_tag, fetch the invoice details from the payload
             customer_id = request.json.get("customer_id")
@@ -1526,7 +1532,7 @@ def create_performa():
             total_amount = request.json.get("gross_total")
             terms = request.json.get("terms")
             preformaTag = request.json.get("preformaTag")
-
+            refPoValue = request.json.get("refPoValue")
         # Get customer details
         try:
             # Attempt to match customer_id as ObjectId
@@ -1579,7 +1585,9 @@ def create_performa():
             "total_amount": total_amount,
             "terms": terms,
             "base_url": base_url,
-            "preformaTag": preformaTag
+            "preformaTag": preformaTag,
+            "refPoValue" : refPoValue
+            
         }
 
         # Log the data being received and the invoice being created
@@ -1597,7 +1605,8 @@ def create_performa():
             "customer_gstin": customer.get("companyGstin",'-'),
             "products": performa["items"],
             "terms": performa["terms"],
-            "preformaTag": preformaTag
+            "preformaTag": preformaTag,
+            "refPoValue" :refPoValue
         }
 
         # Log the final data being passed to the template
@@ -1641,7 +1650,8 @@ def create_performa():
             company_payee= company_payee,
             company_email= company_email,
             company_contact=company_contact,
-            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
+            po_ref = refPoValue 
            
             #customer_name = po_invoice["customer_name"]+" \n"+po_invoice["customer_address"]
         )
@@ -1869,7 +1879,7 @@ def get_performas():
         # Get query parameters: customer_id, page, per_page
         customer_id = request.args.get("customer_id")
         page = int(request.args.get("page", 1))  # Default to page 1 if not provided
-        limit = int(request.args.get("per_page", 10))  # Default to 10 performas per page
+        limit = int(request.args.get("per_page", 5))  # Default to 10 performas per page
 
         # Ensure pagination values are valid
         if page < 1 or limit < 1:
@@ -2313,7 +2323,9 @@ def create_purchase_orders():
             revised_purchase_price = purchase_price - discount
             quantity = int(item.get("quantity", 0))
             total_amount = quantity * revised_purchase_price
-
+            mode = item.get("mode","-")
+            business_type = item.get("business_type","-")
+            
             po_number = generate_purchase_order_number()  # Implement your PO number generation logic
             company_document = company_datas.find_one({})
 
@@ -2353,7 +2365,9 @@ def create_purchase_orders():
                 "date": datetime.now(ZoneInfo("Asia/Kolkata")),
                 "status": "Pending",  # Or set an initial status
                 "proforma_id": performa_number,
-                "discount": discount
+                "discount": discount,
+                "mode":mode,
+                "business_type":business_type
             }
 
             # Save Purchase Order to the database
@@ -2474,7 +2488,9 @@ def create_purchase_orders():
                 "payment_status": "Pending",  # Will be updated when payment happens
                 "mode" :"regular", #should come from PO
                 "type" : "new", #should come from PO 
-                "proforma_id": performa_number
+                "proforma_id": performa_number,
+                "mode":mode,
+                "business_type":business_type
             }
             orders_collection.insert_one(order_data)
             # this section is OrderBD this should be update at item level------------------------------------------  
@@ -2507,6 +2523,7 @@ def create_purchase_orders():
             "payment_reference": "",
             "due_date": None,  # Set the due date if necessary
             "po_number":po_number,
+            "po_ref": proforma["po_ref"]
         }
         # Save to Invoice DB
         invoice_collection.insert_one(invoice_data)
@@ -2705,7 +2722,8 @@ def generate_invoice_pdf(invoice_number):
             po_invoice = invoice,
             addl_discount = 0, #just added
             gross_total = total_amount,
-            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png'
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
+            po_ref = invoice["po_ref"]
         )
         pdf_filename = f"invoice_{uuid.uuid4()}.pdf"
 

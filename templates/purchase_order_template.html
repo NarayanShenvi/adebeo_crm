@@ -336,13 +336,13 @@ footer strong {
         
             <!-- Loop to Display Items -->
             <tr>
-                <td>{{ po_pdf_data.index }}</td>  
+                <td>1</td>  
                 <td>{{ product_name }}</td>  
                 <td>{{quantity }}</td>  
                 <td>₹ {{purchase_price }}</td>  
                 <td>₹ {{ (purchase_price- discount) * quantity }}</td>  
                 <td>₹{{ ((total_amount - discount) * 0.18) | round | int }}</td>  
-                <td>₹ {{( total_amount+( total_amount* 0.18 ))}}</td>  
+                <td>₹ {{( total_amount+( total_amount* 0.18 )) | round | int}}</td>  
             </tr>
             <!-- Net Total in Words Row -->
             <tr class="net-total-row">
