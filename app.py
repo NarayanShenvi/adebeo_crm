@@ -2241,7 +2241,8 @@ def get_proformas():
                         "sub_total": item.get("sub_total", 0),
                         "unit_price": item.get("unit_price", 0),
                         "discount": item.get("discount", 0),
-                        "dr_status": item.get("dr_status", "")
+                        "dr_status": item.get("dr_status", ""),
+                        "subscriptionDuration":product.get("subscriptionDuration","1 Year")
                     }
 
                     # Append item with full product details to the proforma's items list
@@ -2263,6 +2264,32 @@ def get_proformas():
     except Exception as e:
         logging.error(f"An error occurred while fetching proformas: {e}")
         return jsonify({"error": "Internal Server Error. Please try again later."}), 500
+
+DURATION_TO_DAYS = {
+    "1 Month": 30,
+    "3 Months": 90,
+    "6 Months": 180,
+    "1 Year": 365,
+    "2 Years": 730,
+    "3 Years": 1095,
+    "Perpetual": -1  # Perpetual doesn't expire
+}
+
+def calculate_validity_date(duration: str):
+    # Get the number of days corresponding to the selected duration
+    days = DURATION_TO_DAYS.get(duration)
+
+    # Check if the duration is valid
+    if days is None:
+        raise ValueError(f"Invalid subscription duration: {duration}")
+
+    # If it's perpetual, there's no expiration
+    if days == -1:
+        return "Perpetual (No expiration)"
+    
+    # Calculate expiration date based on duration (add days to current date)
+    expiration_date = datetime.now() + timedelta(days=days)
+    return expiration_date.strftime('%Y-%m-%d')  # Format as 'YYYY-MM-DD'
 
 @app.route("/create_purchase_orders", methods=["POST"])
 @login_required
@@ -2325,7 +2352,10 @@ def create_purchase_orders():
             total_amount = quantity * revised_purchase_price
             mode = item.get("mode","-")
             business_type = item.get("business_type","-")
-            
+            subscriptionDuration = item.get("subscriptionDuration", "1 Year")
+             # Calculate validity date from the selected duration
+            validity_date = calculate_validity_date(subscriptionDuration)
+    
             po_number = generate_purchase_order_number()  # Implement your PO number generation logic
             company_document = company_datas.find_one({})
 
@@ -2490,7 +2520,8 @@ def create_purchase_orders():
                 "type" : "new", #should come from PO 
                 "proforma_id": performa_number,
                 "mode":mode,
-                "business_type":business_type
+                "business_type":business_type,
+                "validity": validity_date
             }
             orders_collection.insert_one(order_data)
             # this section is OrderBD this should be update at item level------------------------------------------  
@@ -2625,9 +2656,9 @@ def create_purchase_orders():
             "customer_id": customer_id,
             "customer_name":customer["companyName"],
             "invoice_number": invoice_number,
-            "total_amount": total_amount,
+            "total_amount":  proforma["total_amount"],
             "paid_amount": 0,
-            "remaining_amount": total_amount,
+            "remaining_amount":  proforma["total_amount"],
             "invoice_date": datetime.now().strftime('%Y-%m-%d'),
             "status": "inprog"
             }
