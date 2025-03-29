@@ -2411,7 +2411,7 @@ def create_purchase_orders():
             contact_name = contact,
             email = email,
             #customer_name = customer.get("companyName", "N/A"),
-            client_ref_po = "-",
+            client_ref_po = proforma["refPoValue"],
             company_name = company_name,
             company_address = company_address,
             company_contact = company_contact,
@@ -2523,7 +2523,7 @@ def create_purchase_orders():
             "payment_reference": "",
             "due_date": None,  # Set the due date if necessary
             "po_number":po_number,
-            "po_ref": proforma["po_ref"]
+            "po_ref": proforma["refPoValue"]
         }
         # Save to Invoice DB
         invoice_collection.insert_one(invoice_data)
