@@ -2317,7 +2317,7 @@ def create_purchase_orders():
             purchase_price = float(item.get("purchase_cost", 0))
             contact =  item.get("contact", "-")
             email = item.get("email","-")
-            gstin = item.get("gstin","-")
+            gstin = item.get("companyGstin","-")
             # Calculate the total amount (assuming the discount field is already available)
             discount = float(item.get("discount", 0))
             revised_purchase_price = purchase_price - discount
@@ -2723,7 +2723,9 @@ def generate_invoice_pdf(invoice_number):
             addl_discount = 0, #just added
             gross_total = total_amount,
             logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
-            po_ref = invoice["po_ref"]
+            po_ref = invoice["po_ref"],
+            customer_gstin = "GSTIN: "+customer.get("gstin", "N/A")
+
         )
         pdf_filename = f"invoice_{uuid.uuid4()}.pdf"
 
