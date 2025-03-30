@@ -1243,7 +1243,9 @@ def adebeo_create_quotes():
             "company_name":company_name,
             "company_address":company_address,
             "company_contact":company_contact,
-            "company_email":company_email
+            "company_email":company_email,
+            "overall_discount":request.json.get("overall_discount","0"),
+            "tax_amount":request.json.get("tax_amount","0")
         }
 
         # Log the data being received and the quote being created
@@ -1265,7 +1267,9 @@ def adebeo_create_quotes():
             "company_address":quote["company_address"],
             "company_contact":quote["company_contact"],
             "company_email":quote["company_email"],
-            "total_amount" : quote["total_amount"]
+            "total_amount" : quote["total_amount"],
+            "overall_discount":quote["overall_discount"],
+            "tax_amount":quote["tax_amount"]
         }
 
         # Log the final data being passed to the template
@@ -1295,7 +1299,9 @@ def adebeo_create_quotes():
             company_address = "J.P Nagar, Bangalore",
             company_contact = quote_data["company_contact"],
             base_url = base_url, #'http://127.0.0.1:5000'
-            logo_image =  local_image_path
+            logo_image =  local_image_path,
+            overall_discount= quote_data["overall_discount"],
+            tax_amount=quote_data["tax_amount"]
         )
 
         # Log the HTML that will be converted to PDF
@@ -1391,6 +1397,8 @@ def get_quotes():
                 "quote_date": quote["insertDate"].strftime('%Y-%m-%d'),
                 "quote_tag": quote.get("quoteTag", ""),
                 "total_price": quote.get("total_amount", 0),
+                "tax_amount": quote.get("tax_amount", 0),
+                "overall_discount":quote.get("overall_discount", 0),
                 "items":quote.get("items",""),
                 "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
                 "base_url": base_url  # Ensure this is never None
@@ -1525,6 +1533,8 @@ def create_performa():
             terms = quote["terms"]
             preformaTag = quote["quoteTag"]
             refPoValue = request.json.get("refPoValue")
+            overall_discount = request.json.get("overall_discount")
+            tax_amount = request.json.get("tax_amount")
         else:
             # If no quote_number or quote_tag, fetch the invoice details from the payload
             customer_id = request.json.get("customer_id")
@@ -1533,6 +1543,8 @@ def create_performa():
             terms = request.json.get("terms")
             preformaTag = request.json.get("preformaTag")
             refPoValue = request.json.get("refPoValue")
+            overall_discount = request.json.get("overall_discount")
+            tax_amount = request.json.get("tax_amount")
         # Get customer details
         try:
             # Attempt to match customer_id as ObjectId
@@ -1586,7 +1598,9 @@ def create_performa():
             "terms": terms,
             "base_url": base_url,
             "preformaTag": preformaTag,
-            "refPoValue" : refPoValue
+            "refPoValue" : refPoValue,
+            "tax_amount": tax_amount,
+            "overall_discount":overall_discount
             
         }
 
@@ -2347,6 +2361,7 @@ def create_purchase_orders():
             gstin = item.get("companyGstin","-")
             # Calculate the total amount (assuming the discount field is already available)
             discount = float(item.get("discount", 0))
+            tax_amount = float(item.get("tax_amount",0))
             revised_purchase_price = purchase_price - discount
             quantity = int(item.get("quantity", 0))
             total_amount = quantity * revised_purchase_price
@@ -2397,7 +2412,8 @@ def create_purchase_orders():
                 "proforma_id": performa_number,
                 "discount": discount,
                 "mode":mode,
-                "business_type":business_type
+                "business_type":business_type,
+                "tax_amount":tax_amount
             }
 
             # Save Purchase Order to the database
@@ -3089,6 +3105,7 @@ def get_cxpayment():
                 "invoice_id": str(invoice["_id"]),
                 "invoice_number": str(invoice.get("invoice_number", "")),
                 "customer_name":invoice.get("customer_name",""),
+                "customer_id":invoice.get("customer_id",""),
                 "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
                 "total_amount": invoice.get("total_amount", 0),
                 "items": invoice.get("items", ""),
@@ -3190,7 +3207,7 @@ def process_payment():
         comments = data.get('comment')
 
         # Ensure the required fields are present
-        required_fields = ['customer_id', 'invoice_number', 'total_amount', 'paid_amount', 'payment_status']
+        required_fields = ['customer_id','invoice_number', 'total_amount', 'paid_amount', 'payment_status']
         missing_fields = [field for field in required_fields if not data.get(field)]
         
         if missing_fields:
@@ -3199,13 +3216,17 @@ def process_payment():
         # Calculate payment status based on remaining amount
         new_status = "completed" if remaining_amount <= 0 else "inprog"
 
-        # Convert dates to datetime objects (if necessary)
+       # Convert dates to datetime objects (if necessary)
         if invoice_date:
             try:
-                # Parse the date string using strptime (matches the "Thu, 06 Mar 2025 11:41:42 GMT" format)
-                invoice_date = datetime.strptime(invoice_date, "%a, %d %b %Y %H:%M:%S GMT")
+                # Try parsing the date string using the verbose format first
+                try:
+                    invoice_date = datetime.strptime(invoice_date, "%a, %d %b %Y %H:%M:%S GMT")
+                except ValueError:
+                    # If that fails, try parsing using the "YYYY-MM-DD" format
+                    invoice_date = datetime.strptime(invoice_date, "%Y-%m-%d")
             except ValueError:
-                return jsonify({"error": "Invalid date format. Expected format: 'Thu, 06 Mar 2025 11:41:42 GMT'"}), 400
+                return jsonify({"error": f"Invalid date format. Expected format: 'Thu, 06 Mar 2025 11:41:42 GMT' or '2025-03-29', but received: {invoice_date}"}), 400
         else:
             invoice_date = None
 
