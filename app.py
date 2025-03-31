@@ -1666,7 +1666,7 @@ def create_performa():
             total_sum = sum(item.get('sub_total', 0) for item in request.json['items']),
             amount_in_words  = num2words(total_amount),
             gross_total = total_amount,
-            addl_discount = 0,
+            addl_discount = overall_discount,
             company_gstin = company_gstin,
             company_account_no1 =company_account_no1,
             company_bankbranch1 =company_bankbranch1,
