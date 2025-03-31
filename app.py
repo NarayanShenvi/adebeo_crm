@@ -390,7 +390,7 @@ def get_funnel_users():
 @app.route("/create_adebeo_customer_comments", methods=["POST"])
 @login_required
 def create_adebeo_customer_comments():
-    auth_header = request.headers.get("Authorization")
+    #auth_header = request.headers.get("Authorization")
     username = request.user
 
     comment = adebeo_customer_comments.insert_one({
