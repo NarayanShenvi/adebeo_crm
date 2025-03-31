@@ -366,6 +366,7 @@ header {
     text-align: left;    
     border-top: 1px solid #ddd;
 }
+
  footer {
             background-color: #ebe8e8;
             color: #242323;
@@ -415,6 +416,9 @@ header {
                 <div class="info-row">
                     <span class="placeholder">GSTIN:</span> <span>{{ company_gstin }}</span>
                 </div>
+				 <div class="info-row">
+                    <span class="placeholder">PAN :</span> <span>{{ company_pan }}</span>
+                </div>
             </td>
         </tr>
     </table>
@@ -426,7 +430,7 @@ header {
         <tr>
             <th>Bill To</th>
             <th>Place of Supply</th>
-            <th>PO_invoice No.</th>
+            <th>Proforma No.</th>
             <th>PO Ref</th>
             <th>Date</th>
         </tr>
@@ -476,7 +480,7 @@ header {
 				{% for item in products %}
                 <tr>
                     <td>{{ item.description }}</td>  <!-- Changed to match 'Description of Goods/Service' -->
-                    <td>{{ item.sac_code }}</td>  <!-- Changed to match 'SAC Code' -->
+                    <td>{{ item.salesCode }}</td>  <!-- Changed to match 'SAC Code' -->
                     <td>{{ item.quantity }}</td>  <!-- Correctly matches 'Quantity' -->
                     <td>{{ item.unit_price }}</td>  <!-- Correctly matches 'Unit Price (₹)' -->
                     <td>{{ item.discount }}  <!-- Correctly matches 'Discount (₹)' -->
@@ -517,18 +521,7 @@ header {
     <table class="bank">
         <tr>
             <td class="left-column">
-                <strong><i class="fa-solid fa-indian-rupee-sign"></i> Amount Chargeable:</strong>
-                <div class="info-row">
-                    <span class="placeholder">Amount in Words:</span><br>
-                    <span>{{ amount_in_words }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="placeholder">Company PAN:</span><br>
-                    <span>{{ company_pan }}</span>
-                </div>
-            </td>
-            <td class="right-column">
-                <strong><i class="fas fa-university"></i> Bank Details:</strong>
+			<strong><i class="fas fa-university"></i> Bank Details:</strong>
                 <div class="info-row">
                     <span class="placeholder">Current A/C No:</span><br>
                     <span>{{ company_account_no1 }}</span>
@@ -542,13 +535,22 @@ header {
                     <span>{{ company_ifsc1 }}</span>
                 </div>
                 <div class="info-row">
+                    <span class="placeholder">Bank Name:</span><br>
+                    <span>{{ company_bank }}</span>
+                </div>
+				 <div class="info-row">
                     <span class="placeholder">Branch Name:</span><br>
                     <span>{{ company_bankbranch1 }}</span>
                 </div>
+            
+            </td>
+            <td class="right-column">
             </td>
         </tr>
     </table>
-    
+    <div class="tds note">
+
+    </div>
     
     <div class="note">
         <h3>Note</h3>

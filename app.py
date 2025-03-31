@@ -255,6 +255,10 @@ def convert_objectid_to_str(data):
 @login_required
 def get_funnel_users():
     username = request.user
+    
+    claims = get_jwt()
+    user_role = claims.get("role") 
+
     try:
         # Get query params for pagination and search
         page = int(request.args.get('page', 1))  # Page number from URL query param
@@ -265,7 +269,15 @@ def get_funnel_users():
         logging.info(f"Received parameters - page: {page}, limit: {limit}, company_name: {company_name}")
 
         # Fetch all funnel data assigned to the current user (no pagination yet)
-        funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
+        # funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
+        # funnel_data = list(funnel_data_cursor)
+          # If the user is an 'admin' or 'tech', fetch all users' funnel data
+        if user_role in ['admin', 'tech']:
+            funnel_data_cursor = adebeo_user_funnel.find()  # No user-specific filtering
+        else:
+            # For a regular 'user', filter by their username
+            funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
+        
         funnel_data = list(funnel_data_cursor)
 
         # Log all the fetched funnel data (can be a large amount, be careful with logging it in production)
@@ -1579,6 +1591,7 @@ def create_performa():
             company_gstin = cleaned_document.get("company_gstin", "-")
             company_account_no1 =cleaned_document.get("company_account1", " ")
             company_bankbranch1 =cleaned_document.get("company_bankbranch1", " ")
+            company_bank =cleaned_document.get("company_bank", " ")
             company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
             company_swift1 = cleaned_document.get("company_swift1", "-")
             company_pan = cleaned_document.get("company_pan", "-")
@@ -1616,7 +1629,7 @@ def create_performa():
             "customer_address": customer.get("address", "N/A"),
             "customer_email": customer.get("primaryEmail", "N/A"),
             "customer_phone": customer.get("mobileNumber", "N/A"),
-            "customer_gstin": customer.get("companyGstin",'-'),
+            "customer_gstin": customer.get("gstin",'-'),
             "products": performa["items"],
             "terms": performa["terms"],
             "preformaTag": preformaTag,
@@ -1643,7 +1656,7 @@ def create_performa():
             customer_address=po_invoice["customer_address"],
             customer_email=po_invoice["customer_email"],
             customer_phone=po_invoice["customer_phone"],
-            customer_gstin =po_invoice["customer_gstin"],
+            customer_gstin ="GSTIN: "+po_invoice["customer_gstin"],
             company_name = company_name,
             company_address=company_address,
             products=po_invoice["products"],
@@ -1657,6 +1670,7 @@ def create_performa():
             company_gstin = company_gstin,
             company_account_no1 =company_account_no1,
             company_bankbranch1 =company_bankbranch1,
+            company_bank =company_bank,
             company_ifsc1 = company_ifsc1,
             company_swift1 = company_swift1,
             company_pan = company_pan,
@@ -2240,7 +2254,8 @@ def get_proformas():
                         "product_name": product.get("productName", "Unknown Product"),
                         "product_code": product.get("productCode", "Unknown Code"),
                         "company_name": product.get("ProductCompanyName", "Unknown Company"),
-                        "contact": product.get("Contact", "Unknown Contact"),
+                        "contact": product.get("Contact", "-"),
+                        "telephone": product.get("telephone", "-"),
                         "address": product.get("address", "No address"),
                         "company_gstin": product.get("companyGstin", "No GSTIN"),
                         "primary_locality": product.get("primaryLocality", "No locality"),
@@ -2257,6 +2272,7 @@ def get_proformas():
                         "discount": item.get("discount", 0),
                         "dr_status": item.get("dr_status", ""),
                         "subscriptionDuration":product.get("subscriptionDuration","1 Year")
+                    
                     }
 
                     # Append item with full product details to the proforma's items list
@@ -2357,8 +2373,9 @@ def create_purchase_orders():
             vendor_address = item.get("address", "Unknown Address")
             purchase_price = float(item.get("purchase_cost", 0))
             contact =  item.get("contact", "-")
+            telephone = item.get("telephone","-")
             email = item.get("email","-")
-            gstin = item.get("companyGstin","-")
+            gstin = item.get("company_gstin","-")
             # Calculate the total amount (assuming the discount field is already available)
             discount = float(item.get("discount", 0))
             tax_amount = float(item.get("tax_amount",0))
@@ -2395,6 +2412,7 @@ def create_purchase_orders():
                 company_pan = cleaned_document.get("company_pan", "-")
                 invoice_note1= cleaned_document.get("invoice_note1", " ")
                 company_payee= cleaned_document.get("company_payee", " ")
+                po_note1=cleaned_document.get("po_note1","")
 
 
             po_data = {
@@ -2448,8 +2466,9 @@ def create_purchase_orders():
             vendor = po_data["vendor"],
             vendor_address = po_data["vendor_address"],
             quantity = po_data["quantity"],
-            purchase_price= po_data["purchase_price"],
+            purchase_price= revised_purchase_price,
             discount = po_data["discount"],
+            tax_amount = po_data["tax_amount"],
             total_amount = po_data["total_amount"],
             date= po_data["date"].strftime('%Y-%m-%d'),
             proforma_id= performa_number,
@@ -2462,10 +2481,11 @@ def create_purchase_orders():
             company_address = company_address,
             company_contact = company_contact,
             company_email = company_email,
-            net_total_words = num2words(total_amount),
+            net_total_words = num2words((revised_purchase_price * quantity) + tax_amount),
             base_url = base_url,
             logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',   
-            gstin = gstin
+            gstin = gstin,
+            notes = po_note1,
             )
 
              # Log the HTML that will be converted to PDF
@@ -2479,16 +2499,16 @@ def create_purchase_orders():
             # os.makedirs(local_pdf_folder, exist_ok=True)
             # local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
 
-            #HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            # HTML(string=rendered_html).write_pdf(local_pdf_file_path)
 
             # Local file save (for debugging purposes)
-            #local_pdf_folder = './static/pdf'  # Local folder for testing
-            #os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
-            #local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
-            #try:
-            #    HTML(string=rendered_html).write_pdf(local_pdf_file_path)
-            #    logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
-            #except Exception as e:
+            # local_pdf_folder = './static/pdf'  # Local folder for testing
+            # os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+            # local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+            # try:
+            #     HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            #     logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+            # except Exception as e:
             #    logging.error(f"Error saving local PDF: {str(e)}")
 
             # Remote file save (on Render persistent disk)
@@ -2771,7 +2791,8 @@ def generate_invoice_pdf(invoice_number):
             gross_total = total_amount,
             logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
             po_ref = invoice["po_ref"],
-            customer_gstin = "GSTIN: "+customer.get("gstin", "N/A")
+            customer_gstin = "GSTIN: "+customer.get("gstin", "N/A"),
+            customer_address = customer.get("address", "N/A"),
 
         )
         pdf_filename = f"invoice_{uuid.uuid4()}.pdf"
