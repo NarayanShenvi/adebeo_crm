@@ -10,9 +10,13 @@
             padding-top: 30px;
             background-color: white;
         }
-        @page {
-    margin: 36px; /* Removes default page margins */
-}
+        
+				@page {
+			margin-top: 36px; 
+			margin-bottom: 36px;
+			margin-left: 36px;
+			margin-right: 36px;/* Removes default page margins */
+		}
 header {
             color: #000000;
             padding: 15px;
@@ -189,13 +193,13 @@ header {
 /* Make the first column (Description of Goods/Service) wider */
 .po_invoice-details td:first-child, 
 .po_invoice-details th:first-child {
-    width: 20%; /* Adjust the width as needed */
+    width: 25%; /* Adjust the width as needed */
 }
 
 /* Adjust the remaining column widths */
 .po_invoice-details td:nth-child(2),
 .po_invoice-details th:nth-child(2) {
-    width: 15%;
+    width: 10%;
 }
 
 .po_invoice-details td:nth-child(3),
@@ -399,8 +403,11 @@ header {
 </head>
 <body>
     <header>
-	  <img src="{{ logo_image }}" alt="Company Logo" style="width: 190px; height:64px;">
-     <h1>PROFORMA INVOICE</h1>
+        <img src="{{ logo_image }}" alt="Company Logo" style="width: 150px; height:64px;">
+        <div style="text-align: center;">
+			<h1 style="margin-bottom: 5px;">PERFORMA INVOICE</h1>
+			<h5 style="margin-top: 0px;">CIN#U72200KA2015PTC080050</h5> <!-- CIN placed directly below -->
+		</div>
     </header>
 
     <table class="com">
@@ -506,7 +513,7 @@ header {
                 <td>₹ {{( total_sum - addl_discount )|round(2) }}</td>
             </tr>
             <tr>
-                <td><strong>Tax:</strong></td>
+                <td><strong>Tax (18%):</strong></td>
                 <td>₹ {{ ((total_sum - addl_discount) * 0.18) | round | int }}</td>
             </tr>
             <tr>
