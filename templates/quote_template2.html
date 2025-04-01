@@ -12,7 +12,12 @@
             background-color: white;
             padding-bottom: 80px; /* Make space for the footer */
         }
-
+        @page {
+			margin-top: 36px; 
+			margin-bottom: 36px;
+			margin-left: 36px;
+			margin-right: 36px;/* Removes default page margins */
+		}
         header {
             color: #000000;
             padding: 15px;
@@ -179,13 +184,13 @@
         }
 
         table th:nth-child(1),
-        table td:nth-child(1) { width: 5%; }
+        table td:nth-child(1) { width: 3%; }
 
         table th:nth-child(2),
-        table td:nth-child(2) { width: 25%; }
+        table td:nth-child(2) { width: 30%; }
 
         table th:nth-child(3),
-        table td:nth-child(3) { width: 9%; }
+        table td:nth-child(3) { width: 5%; }
 
         table th:nth-child(4),
         table td:nth-child(4) { width: 12%; }
@@ -252,11 +257,13 @@
     </style>
 </head>
 <body>
-    <header>
-        <!-- Use the passed logo image path or fallback to the base_url and Flask's url_for -->
-             <img src="{{ logo_image }}" alt="Company Logo" style="width: 190px; height:64px;">
-        <h1>QUOTE PROPOSAL</h1>
-    </header>
+   <header>
+    <img src="{{ logo_image }}" alt="Company Logo" style="width: 190px; height:64px;">
+    <div style="text-align: center;">
+        <h1 style="margin-bottom: 5px;">QUOTE PROPOSAL</h1>
+        <h5 style="margin-top: 0px;">CIN#U72200KA2015PTC080050</h5> <!-- CIN placed directly below -->
+    </div>
+</header>
 
     <div class="flex-container">
         <div class="left">
@@ -290,7 +297,7 @@
                 <tr>
                     <th>Sl. No.</th>
                     <th>Product Description</th>
-                    <th>Quantity</th>
+                    <th>Qty</th>
                     <th>Unit Price (₹)</th>
                     <th>Discount (₹)</th>
                     <th>Total Price (₹)</th>
