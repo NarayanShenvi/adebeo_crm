@@ -1257,7 +1257,11 @@ def adebeo_create_quotes():
             "company_contact":company_contact,
             "company_email":company_email,
             "overall_discount":request.json.get("overall_discount","0"),
-            "tax_amount":request.json.get("tax_amount","0")
+            "tax_amount":request.json.get("tax_amount","0"),
+            "customer_name": customer.get("companyName", "N/A"),
+            "customer_address": customer.get("address", "N/A"),
+            "customer_email": customer.get("primaryEmail", "N/A"),
+            "customer_phone": customer.get("mobileNumber", "N/A"),
         }
 
         # Log the data being received and the quote being created
@@ -3300,7 +3304,247 @@ def process_payment():
         return jsonify({"error": str(e)}), 500
 
 
-########################### VxPayment DB update #############################
+########################### Report for user #############################
+
+# Helper functions to fetch data based on the report type
+def get_comment_activity(company_filter, date_filter, skip, limit):
+    comments = adebeo_customer_comments.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
+    activities = []
+    
+    for comment in comments:
+        customer_id = comment.get('customer_id')  # Fetch customer_id from the comment
+        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'  # Fetch customer_name
+        
+        activity = {
+            "activity_type": "Comment",
+            "insertDate": comment['insertDate'],
+            "insertBy": comment['insertBy'],
+            "details": comment['comment'],
+            "company_name": customer_name  # Return customer_name instead of company_name
+        }
+        
+        activities.append(activity)
+    
+    return activities
+    
+
+def get_quote_activity(company_filter, date_filter, skip, limit):
+    quotes = list(adebeo_quotes_collection.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1))
+    activities = []
+    
+    for quote in quotes:
+        customer_id = quote.get('customer_id')  # Fetch customer_id from the quote
+        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'  # Fetch customer_name
+        
+        activity = {
+            "activity_type": "Quote",
+            "insertDate": quote['insertDate'],
+            "insertBy": quote['insertBy'],
+            "details": f"Quote ID: {quote['quote_number']}, Quote Tag: {quote.get('quoteTag', '')}",
+            "company_name": customer_name  # Return customer_name instead of company_name
+        }
+        
+        activities.append(activity)
+    
+    return activities
+
+def get_proforma_activity(company_filter, date_filter, skip, limit):
+    proformas = adebeo_performa_collection.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
+    activities = []
+    
+    for proforma in proformas:
+        customer_id = proforma.get('customer_id')  # Fetch customer_id from the proforma
+        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'  # Fetch customer_name
+        
+        activity = {
+            "activity_type": "Proforma",
+            "insertDate": proforma['insertDate'],
+            "insertBy": proforma['insertBy'],
+            "details": f"Proforma Number: {proforma['performa_number']}, Proforma Tag: {proforma.get('preformaTag', '')}",
+            "company_name": customer_name  # Return customer_name instead of company_name
+        }
+        
+        activities.append(activity)
+    
+    return activities
+
+def get_invoice_activity(company_filter, date_filter, skip, limit):
+    invoices = adebeo_invoice_collection.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
+    activities = []
+    
+    for invoice in invoices:
+        customer_id = invoice.get('customer_id')  # Fetch customer_id from the invoice
+        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'  # Fetch customer_name
+        
+        activity = {
+            "activity_type": "Invoice",
+            "insertDate": invoice['insertDate'],
+            "insertBy": invoice['insertBy'],
+            "details": f"Invoice Number: {invoice.get('invoice_number', '')}, Invoice Status: {invoice.get('status', '')}",
+            "company_name": customer_name  # Return customer_name instead of company_name
+        }
+        
+        activities.append(activity)
+    
+    return activities
+# Helper function to sort activities by timestamp (insertDate)
+def sort_activities(activities):
+    return sorted(activities, key=lambda x: x['insertDate'])
+
+# Route to fetch the activity report with pagination and report type
+# Route to fetch the activity report with pagination and report type
+# Route to fetch the activity report with pagination and report type
+@app.route('/activity_report', methods=['GET'])
+def get_activity_report():
+    # Get parameters from the request
+    start_date = request.args.get('startDate', None)
+    end_date = request.args.get('endDate', None)
+    company_name = request.args.get('companyName', None)  # This will be None if not provided
+    user = request.args.get('user', None)
+    page = int(request.args.get('page', 1))  # Default page 1
+    per_page = int(request.args.get('per_page', 10))  # Default per page 10
+
+    # Calculate skip value for pagination
+    skip = (page - 1) * per_page
+
+    # If start date or end date is not provided, set default values for the current date
+    if not start_date:
+        # Set start date to midnight of current date
+        start_date = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        # If start_date is provided, append 'T00:00:00' for midnight if time is not specified
+        if 'T' not in start_date:
+            start_date += 'T00:00:00'
+        start_date = datetime.fromisoformat(start_date)
+
+    if not end_date:
+        # Set end date to 23:59:59 of current date
+        end_date = datetime.today().replace(hour=23, minute=59, second=59, microsecond=999999)
+    else:
+        # If end_date is provided, append 'T23:59:59' for the end of the day if time is not specified
+        if 'T' not in end_date:
+            end_date += 'T23:59:59'
+        end_date = datetime.fromisoformat(end_date)
+
+    # Build the company filter
+    company_filter = {}
+    if company_name:
+        company_filter['company_name'] = company_name  # Only include if companyName was provided
+
+    # Build the date filter
+    date_filter = {
+        'insertDate': {
+            '$gte': start_date,
+            '$lte': end_date
+        }
+    }
+
+    # Add user filter if user is provided
+    if user:
+        date_filter['insertBy'] = user  # Add condition for the specific user (assuming it's stored in 'insertBy')
+
+    try:
+        # Fetch data from different collections with pagination
+        comment_activity = get_comment_activity(company_filter, date_filter, skip, per_page)
+        quote_activity = get_quote_activity(company_filter, date_filter, skip, per_page)
+        proforma_activity = get_proforma_activity(company_filter, date_filter, skip, per_page)
+        invoice_activity = get_invoice_activity(company_filter, date_filter, skip, per_page)
+
+        # Combine all activities into one list
+        activities = comment_activity + quote_activity + proforma_activity + invoice_activity
+
+        # Sort activities by insertDate (timestamp)
+        sorted_activities = sort_activities(activities)
+
+        # Now, we need to add customer names to the activities if companyName was not provided
+        if not company_name:
+            for activity in sorted_activities:
+                # Assume the customer_id exists in each activity
+                customer_id = activity.get("customer_id")
+                if customer_id:
+                    # You need to query the `customer` collection or whatever collection contains `customer_name`
+                    customer_data = get_customer_data_by_id(customer_id)  # A function to get customer data
+                    activity['customer_name'] = customer_data.get('name', 'Unknown')  # Add the name to activity
+                    # Replace company_name with customer_name
+                    activity['company_name'] = activity['customer_name']  # You may choose to remove or update 'company_name'
+
+        # Count total records to calculate total pages
+        total_count = adebeo_customer_comments.count_documents({**company_filter, **date_filter}) + \
+                      adebeo_quotes_collection.count_documents({**company_filter, **date_filter}) + \
+                      adebeo_performa_collection.count_documents({**company_filter, **date_filter}) + \
+                      adebeo_invoice_collection.count_documents({**company_filter, **date_filter})
+
+        total_pages = (total_count + per_page - 1) // per_page  # Calculate total pages
+
+        # Return paginated response with metadata
+        return jsonify({
+            "currentPage": page,
+            "totalPages": total_pages,
+            "totalCount": total_count,
+            "activities": sorted_activities
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+   # Function to format the date with default times (00:00:00 for start and 23:59:59 for end)
+def format_datetime_for_query(date_str, default_time):
+    if not date_str:
+        return None
+    try:
+        parsed_date = datetime.fromisoformat(date_str)
+        if not parsed_date.time():  # If time is not provided, apply the default time
+            return parsed_date.replace(hour=default_time[0], minute=default_time[1], second=default_time[2]).strftime('%Y-%m-%dT%H:%M:%S')
+        return parsed_date.strftime('%Y-%m-%dT%H:%M:%S')
+    except ValueError:
+            return None        
+
+
+def get_customer_name_by_id(customer_id):
+    try:
+        # Convert string customer_id to ObjectId
+        customer_id_object = ObjectId(customer_id)
+        
+        # Query the customer collection using the ObjectId
+        customer = adebeo_customer_collection.find_one({"_id": customer_id_object})
+        
+        # If the customer is found, return the companyName or ownerName
+        if customer:
+            return customer.get('companyName', 'Unknown')  # Or use ownerName or another field if needed
+        else:
+            return 'Unknown'  # Return 'Unknown' if no matching customer is found
+    except Exception as e:
+        print(f"Error while fetching customer name: {e}")
+        return 'Unknown'  # Return 'Unknown' in case of any errors
+
+
+# Example function to get customer data by customer_id
+def get_customer_data_by_id(customer_id):
+    # Assuming there's a collection or database where customer details are stored
+    customer = adebeo_customer_collection.find_one({"_id": customer_id})
+    return customer if customer else {}
+
+@app.route('/current_adebeo_users', methods=['GET'])
+def current_adebeo_users():
+    try:
+        # Assuming your MongoDB collection is named `adebeo_users_collection`
+        users = adebeo_users_collection.find({}, {'password': 0, '__v': 0})  # Excluding password and other sensitive fields
+        
+        # Mapping the result to a cleaner format (removing _id and renaming if necessary)
+        users_list = []
+        for user in users:
+            user_data = {
+                'username': user['username'],
+                'role': user['role']
+            }
+            users_list.append(user_data)
+        
+        return jsonify(users_list)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
 
 
 if __name__ == "__main__":
