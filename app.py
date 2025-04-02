@@ -47,7 +47,8 @@ jwt = JWTManager(app)
 #app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
 # Replace <connection_string> with your MongoDB Atlas URI
 # client = "mongodb+srv://narayan:<9OfgyQys5pZ4kGfW>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm"
-MONGODB_URI = "mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm"
+#MONGODB_URI = "mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm" this was free trail
+MONGODB_URI = "mongodb+srv://narayan:<db_password>@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm"
 # Connect to MongoDB
 client = MongoClient(MONGODB_URI)
 
