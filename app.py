@@ -2390,6 +2390,8 @@ def create_purchase_orders():
             mode = item.get("mode","-")
             business_type = item.get("business_type","-")
             subscriptionDuration = item.get("subscriptionDuration", "1 Year")
+            unit_price = item.get("unit_price",0)
+
              # Calculate validity date from the selected duration
             validity_date = calculate_validity_date(subscriptionDuration)
     
@@ -2551,8 +2553,8 @@ def create_purchase_orders():
                # "product_id": item.get("product_id", "Unknown Product ID"),  # Assuming product_id is provided
                 "product_name":product_name,
                 "quantity": quantity,
-                "purchase_price": revised_purchase_price,
-                "total_amount": total_amount,
+                "adebeo_purchase_price": revised_purchase_price,
+                "adebeo_total_amount": total_amount,
                 "status": "Pending",
                 "order_date": datetime.now(),
                 "expiry" :"", # Need to update
@@ -2562,7 +2564,9 @@ def create_purchase_orders():
                 "proforma_id": performa_number,
                 "mode":mode,
                 "business_type":business_type,
-                "validity": validity_date
+                "validity": validity_date,
+                "total_amount":unit_price*quantity,
+                "purchase_price":unit_price,
             }
             orders_collection.insert_one(order_data)
             # this section is OrderBD this should be update at item level------------------------------------------  
