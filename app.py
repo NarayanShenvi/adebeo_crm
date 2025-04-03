@@ -2758,6 +2758,7 @@ def generate_invoice_pdf(invoice_number):
             company_gstin = cleaned_document.get("company_gstin", "-")
             company_account_no1 = cleaned_document.get("company_account1", " ")
             company_bankbranch1 = cleaned_document.get("company_bankbranch1", " ")
+            company_bank = cleaned_document.get("company_bank", " ")
             company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
             company_swift1 = cleaned_document.get("company_swift1", "-")
             company_pan = cleaned_document.get("company_pan", "-")
@@ -2784,6 +2785,7 @@ def generate_invoice_pdf(invoice_number):
             company_email=company_email,
             company_gstin=company_gstin,
             company_account_no1=company_account_no1,
+            company_bank = company_bank,
             company_bankbranch1=company_bankbranch1,
             company_ifsc1=company_ifsc1,
             company_swift1=company_swift1,
