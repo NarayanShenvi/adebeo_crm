@@ -75,6 +75,9 @@ customer_payments_collection = db['adebeo_payments']
 vendor_payments_collection =db['adebeo_vendor_payments']
 company_datas = db['adebeo_company_datas']
 
+
+adebeo_customer_collection.create_index([("companyName", 1)]) 
+
 # Configure logging
 # logging.basicConfig(
 #     filename='app.log',  # File to store logs
