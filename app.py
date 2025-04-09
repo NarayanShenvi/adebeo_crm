@@ -75,8 +75,7 @@ customer_payments_collection = db['adebeo_payments']
 vendor_payments_collection =db['adebeo_vendor_payments']
 company_datas = db['adebeo_company_datas']
 
-
-adebeo_customer_collection.create_index([("companyName", 1)]) 
+adebeo_customer_collection.create_index([("companyName", "text")])
 
 # Configure logging
 # logging.basicConfig(
@@ -255,6 +254,142 @@ def convert_objectid_to_str(data):
         return data
 
 
+# @app.route("/funnel_users", methods=["GET"])
+# @login_required
+# def get_funnel_users():
+#     username = request.user
+    
+#     claims = get_jwt()
+#     user_role = claims.get("role") 
+
+#     try:
+#         # Get query params for pagination and search
+#         page = int(request.args.get('page', 1))  # Page number from URL query param
+#         limit = int(request.args.get('limit', 10))  # Number of items per page from URL query param
+#         company_name = request.args.get('companyName', None)  # Company name for search
+
+#         # Log the received parameters
+#         logging.info(f"Received parameters - page: {page}, limit: {limit}, company_name: {company_name}")
+
+#         # Fetch all funnel data assigned to the current user (no pagination yet)
+#         # funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
+#         # funnel_data = list(funnel_data_cursor)
+#           # If the user is an 'admin' or 'tech', fetch all users' funnel data
+#         if user_role in ['admin', 'tech']:
+#             funnel_data_cursor = adebeo_user_funnel.find()  # No user-specific filtering
+#         else:
+#             # For a regular 'user', filter by their username
+#             funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
+        
+#         funnel_data = list(funnel_data_cursor)
+
+#         # Log all the fetched funnel data (can be a large amount, be careful with logging it in production)
+#         logging.info(f"Funnel data fetched for user '{username}': {len(funnel_data)} records")
+
+#         # Log each funnel entry to verify the data (for debugging purposes)
+#         for entry in funnel_data:
+#             logging.debug(f"Funnel entry: {entry}")
+
+#         # Check if funnel data is found
+#         if not funnel_data:
+#             logging.warning("No funnel data found")
+#             return jsonify({"message": "No funnel data found"}), 404
+
+#         # If company_name is provided, filter customers based on it (case-insensitive fuzzy matching)
+#         if company_name:
+#             company_name_decoded = unquote(company_name).strip().lower()
+#             logging.info(f"Decoded company_name for filtering: {company_name_decoded}")
+
+#             # Create a regex pattern for fuzzy and case-insensitive matching
+#             pattern = re.compile(re.escape(company_name_decoded), re.IGNORECASE)
+#             logging.info(f"Regex pattern for matching: {pattern}")
+            
+
+#             funnel_data_filtered = []
+#             seen_customers = set()  # To avoid processing the same customer multiple times
+#             for funnel_entry in funnel_data:
+#                 customer_id = funnel_entry.get('customer_id')
+#                 if not customer_id:
+#                     logging.warning(f"Funnel entry missing customer_id: {funnel_entry}")
+#                     continue
+
+#                 # Fetch the customer data for each funnel entry
+#                 customer = db['adebeo_customers'].find_one({"_id": ObjectId(customer_id)})
+#                 if customer:
+#                     company_name_in_customer = customer.get('companyName', '').lower()
+#                     logging.info(f"Comparing '{company_name_in_customer}' with '{company_name_decoded}'")
+
+#                     if pattern.search(company_name_in_customer):
+#                         funnel_data_filtered.append(funnel_entry)
+#                         logging.info(f"Match found for customer: {company_name_in_customer}")
+#                     else:
+#                         logging.info(f"No match for customer: {company_name_in_customer}")
+#                 else:
+#                     logging.warning(f"Customer with ID {customer_id} not found in 'adebeo_customers'")
+
+#             # Log the filtered data
+#             logging.info(f"Filtered funnel data: {len(funnel_data_filtered)} records matching company_name")
+
+#             # Update the funnel data with the filtered list
+#             funnel_data = funnel_data_filtered
+
+#         # If no customers matched the company_name filter (if provided)
+#         if not funnel_data:
+#             logging.warning(f"No customers found matching the company name '{company_name}'")
+#             return jsonify({"message": f"No customers found matching the company name '{company_name}'"}), 404
+
+#         # Apply pagination now (after filtering)
+#         total_records = len(funnel_data)
+#         total_pages = (total_records // limit) + (1 if total_records % limit else 0)
+#         logging.info(f"Total records after filtering: {total_records}, Total pages: {total_pages}, Pagination skip: {(page - 1) * limit}, limit: {limit}")
+
+#         # Calculate the skip value and apply it to the filtered funnel data
+#         skip = (page - 1) * limit
+#         paginated_data = funnel_data[skip:skip+limit]
+
+#         # Log paginated data
+#         logging.info(f"Paginated funnel data: {len(paginated_data)} records for page {page}")
+
+#         # Add comments for each customer in the paginated data
+#         customer_with_comments = []
+#         for funnel_entry in paginated_data:
+#             customer_id = funnel_entry.get('customer_id')
+#             customer = db['adebeo_customers'].find_one({"_id": ObjectId(customer_id)})
+#             if customer:
+#                 comments_cursor = db['adebeo_customer_comments'].find({"customer_id": str(customer['_id'])})
+#                 comments = list(comments_cursor)
+#                 customer['comments'] = comments
+#                 customer_with_comments.append(customer)
+#                 logging.info(f"Added comments for customer: {customer.get('companyName', 'Unknown Company')}")
+#             else:
+#                 logging.warning(f"Customer with ID {customer_id} not found in 'adebeo_customers'")
+
+#         # Convert ObjectId fields to strings
+#         customer_with_comments = convert_objectid_to_str(customer_with_comments)
+
+#         # Log the final customer data with comments
+#         logging.info(f"Customer data with comments: {len(customer_with_comments)} records")
+
+#         # Return the response with pagination data
+#         response_data = {
+#             "data": customer_with_comments,
+#             "limit": limit,
+#             "page": page,
+#             "total_pages": total_pages,
+#             "total_records": total_records
+#         }
+
+#         logging.info(f"Returning response: {response_data}")
+#         return jsonify(response_data)
+
+#     except ValueError as ve:
+#         logging.error(f"ValueError occurred: {str(ve)}")
+#         return jsonify({"message": "Validation error", "error": str(ve)}), 400
+    
+#     except Exception as e:
+#         logging.error(f"Error occurred: {str(e)}")
+#         return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
 @app.route("/funnel_users", methods=["GET"])
 @login_required
 def get_funnel_users():
@@ -273,9 +408,6 @@ def get_funnel_users():
         logging.info(f"Received parameters - page: {page}, limit: {limit}, company_name: {company_name}")
 
         # Fetch all funnel data assigned to the current user (no pagination yet)
-        # funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
-        # funnel_data = list(funnel_data_cursor)
-          # If the user is an 'admin' or 'tech', fetch all users' funnel data
         if user_role in ['admin', 'tech']:
             funnel_data_cursor = adebeo_user_funnel.find()  # No user-specific filtering
         else:
@@ -284,26 +416,30 @@ def get_funnel_users():
         
         funnel_data = list(funnel_data_cursor)
 
-        # Log all the fetched funnel data (can be a large amount, be careful with logging it in production)
+        # Log the fetched funnel data (be cautious in production, as it can be large)
         logging.info(f"Funnel data fetched for user '{username}': {len(funnel_data)} records")
 
-        # Log each funnel entry to verify the data (for debugging purposes)
-        for entry in funnel_data:
-            logging.debug(f"Funnel entry: {entry}")
-
-        # Check if funnel data is found
         if not funnel_data:
             logging.warning("No funnel data found")
             return jsonify({"message": "No funnel data found"}), 404
 
-        # If company_name is provided, filter customers based on it (case-insensitive fuzzy matching)
+        # If company_name is provided, filter customers based on it (case-insensitive partial matching)
         if company_name:
             company_name_decoded = unquote(company_name).strip().lower()
             logging.info(f"Decoded company_name for filtering: {company_name_decoded}")
 
-            # Create a regex pattern for fuzzy and case-insensitive matching
-            pattern = re.compile(re.escape(company_name_decoded), re.IGNORECASE)
-            logging.info(f"Regex pattern for matching: {pattern}")
+            # Create a regex pattern for partial matching
+            regex_pattern = re.escape(company_name_decoded)
+
+            # Log the query being executed
+            logging.info(f"Running query with regex pattern: {regex_pattern}")
+
+            # Perform the query with regex for partial matching and no starting anchor '^'
+            explain_result = db['adebeo_customers'].find({
+                "companyName": {"$regex": f"{regex_pattern}", "$options": "i"}  # No ^, enables partial match anywhere
+            }).max_time_ms(1000000).explain()
+
+            logging.info(f"Query explain result: {explain_result}")
 
             funnel_data_filtered = []
             for funnel_entry in funnel_data:
@@ -318,7 +454,8 @@ def get_funnel_users():
                     company_name_in_customer = customer.get('companyName', '').lower()
                     logging.info(f"Comparing '{company_name_in_customer}' with '{company_name_decoded}'")
 
-                    if pattern.search(company_name_in_customer):
+                    # Use regex for partial matching (without ^ for beginning match)
+                    if re.search(regex_pattern, company_name_in_customer, re.IGNORECASE):
                         funnel_data_filtered.append(funnel_entry)
                         logging.info(f"Match found for customer: {company_name_in_customer}")
                     else:
@@ -326,7 +463,7 @@ def get_funnel_users():
                 else:
                     logging.warning(f"Customer with ID {customer_id} not found in 'adebeo_customers'")
 
-            # Log the filtered data
+            # Log filtered data
             logging.info(f"Filtered funnel data: {len(funnel_data_filtered)} records matching company_name")
 
             # Update the funnel data with the filtered list
@@ -337,7 +474,7 @@ def get_funnel_users():
             logging.warning(f"No customers found matching the company name '{company_name}'")
             return jsonify({"message": f"No customers found matching the company name '{company_name}'"}), 404
 
-        # Apply pagination now (after filtering)
+        # Apply pagination after filtering
         total_records = len(funnel_data)
         total_pages = (total_records // limit) + (1 if total_records % limit else 0)
         logging.info(f"Total records after filtering: {total_records}, Total pages: {total_pages}, Pagination skip: {(page - 1) * limit}, limit: {limit}")
@@ -346,7 +483,6 @@ def get_funnel_users():
         skip = (page - 1) * limit
         paginated_data = funnel_data[skip:skip+limit]
 
-        # Log paginated data
         logging.info(f"Paginated funnel data: {len(paginated_data)} records for page {page}")
 
         # Add comments for each customer in the paginated data
@@ -388,7 +524,6 @@ def get_funnel_users():
     except Exception as e:
         logging.error(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
-
 
 
 @app.route("/create_adebeo_customer_comments", methods=["POST"])
@@ -3397,6 +3532,58 @@ def get_invoice_activity(company_filter, date_filter, skip, limit):
         activities.append(activity)
     
     return activities
+
+
+def convert_to_datetime(date_str):
+    # Check if it's a string and convert it
+    if isinstance(date_str, str):
+        try:
+            # Assuming the format is like "2025-04-08 16:09:40"
+            return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None  # Handle invalid format if needed
+    return date_str  # Return datetime if already in datetime format
+
+def get_customer_activity(start_date_str, end_date_str):
+    # Define the time zone (if your times are in IST)
+    india_timezone = pytz.timezone('Asia/Kolkata')
+
+    # Convert the start and end date strings into datetime objects
+    start_date = convert_to_datetime(start_date_str)
+    end_date = convert_to_datetime(end_date_str)
+
+    if not start_date or not end_date:
+        # Handle invalid date format
+        return {"error": "Invalid date format"}
+
+    # Localize the dates to IST first
+    start_date = india_timezone.localize(start_date)
+    end_date = india_timezone.localize(end_date)
+
+    # Set times to the beginning and end of the day
+    start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    # Convert both to UTC for MongoDB query
+    start_date_utc = start_date.astimezone(pytz.UTC)
+    end_date_utc = end_date.astimezone(pytz.UTC)
+
+    # Construct the query filter for MongoDB
+    date_filter = {
+        'insertDate': {
+            '$gte': start_date_utc,  # Start of the day in UTC
+            '$lte': end_date_utc     # End of the day in UTC
+        }
+    }
+
+    # Assuming your MongoDB collection is called `adebeo_customer_collection`
+    customer_activities = adebeo_customer_collection.find(date_filter)
+
+    # Log the number of activities fetched (if needed)
+    activities = list(customer_activities)
+    return activities
+
+    
 # Helper function to sort activities by timestamp (insertDate)
 def sort_activities(activities):
     return sorted(activities, key=lambda x: x['insertDate'])
@@ -3459,9 +3646,9 @@ def get_activity_report():
         quote_activity = get_quote_activity(company_filter, date_filter, skip, per_page)
         proforma_activity = get_proforma_activity(company_filter, date_filter, skip, per_page)
         invoice_activity = get_invoice_activity(company_filter, date_filter, skip, per_page)
-
+        customer_activity = get_customer_activity(company_filter, start_date, end_date, skip, per_page)  # New line for customer activity
         # Combine all activities into one list
-        activities = comment_activity + quote_activity + proforma_activity + invoice_activity
+        activities = comment_activity + quote_activity + proforma_activity + invoice_activity + customer_activity
 
         # Sort activities by insertDate (timestamp)
         sorted_activities = sort_activities(activities)
@@ -3509,23 +3696,38 @@ def format_datetime_for_query(date_str, default_time):
     except ValueError:
             return None        
 
-
 def get_customer_name_by_id(customer_id):
     try:
-        # Convert string customer_id to ObjectId
-        customer_id_object = ObjectId(customer_id)
+        # If customer_id is a string, convert it to ObjectId
+        if isinstance(customer_id, str):
+            customer_id = ObjectId(customer_id)
+
+        # Query the customer collection using _id (customer_id should be of type ObjectId)
+        customer = adebeo_customer_collection.find_one({"_id": customer_id})
         
-        # Query the customer collection using the ObjectId
-        customer = adebeo_customer_collection.find_one({"_id": customer_id_object})
-        
-        # If the customer is found, return the companyName or ownerName
         if customer:
-            return customer.get('companyName', 'Unknown')  # Or use ownerName or another field if needed
+            return customer.get('companyName', 'Unknown')  # You can use 'ownerName' or other fields as needed
         else:
-            return 'Unknown'  # Return 'Unknown' if no matching customer is found
+            return 'Unknown'  # If no customer found, return 'Unknown'
     except Exception as e:
         print(f"Error while fetching customer name: {e}")
-        return 'Unknown'  # Return 'Unknown' in case of any errors
+        return 'Unknown'  # Return 'Unknown' in case of errors
+# def get_customer_name_by_id(customer_id):
+#     try:
+#         # Convert string customer_id to ObjectId
+#         customer_id_object = ObjectId(customer_id)
+        
+#         # Query the customer collection using the ObjectId
+#         customer = adebeo_customer_collection.find_one({"_id": customer_id_object})
+        
+#         # If the customer is found, return the companyName or ownerName
+#         if customer:
+#             return customer.get('companyName', 'Unknown')  # Or use ownerName or another field if needed
+#         else:
+#             return 'Unknown'  # Return 'Unknown' if no matching customer is found
+#     except Exception as e:
+#         print(f"Error while fetching customer name: {e}")
+#         return 'Unknown'  # Return 'Unknown' in case of any errors
 
 
 # Example function to get customer data by customer_id
