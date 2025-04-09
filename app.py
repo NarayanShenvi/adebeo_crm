@@ -429,7 +429,8 @@ def get_funnel_users():
             logging.info(f"Decoded company_name for filtering: {company_name_decoded}")
 
             # Create a regex pattern for partial matching
-            regex_pattern = re.escape(company_name_decoded)
+            #regex_pattern = re.escape(company_name_decoded)
+            regex_pattern = f"^{re.escape(company_name_decoded)}"  # This ensures the regex only matches the start of the string
 
             # Log the query being executed
             logging.info(f"Running query with regex pattern: {regex_pattern}")
