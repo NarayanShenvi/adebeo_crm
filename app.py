@@ -1134,27 +1134,23 @@ def generate_quote_number():
     current_year = datetime.now().year
     year_str = str(current_year)
     prefix = "AD"
-    
-    # Query to find the last quote number for the current year
-    last_quote_cursor = adebeo_quotes_collection.find(
-        {"quote_number": {"$regex": f"^{prefix}{year_str}Q"}}
-    ).sort("quote_number", -1).limit(1)
 
-    # Convert the cursor to a list and check the length
-    last_quote = list(last_quote_cursor)
+    # Get all quotes matching the year
+    matching_quotes_cursor = adebeo_quotes_collection.find({
+        "quote_number": {"$regex": f"^{prefix}{year_str}Q\\d+$"}
+    })
 
-    if last_quote:
-        last_quote_number = last_quote[0]['quote_number']
-        # Extract everything after the last 'Q'
-        last_num_str = last_quote_number.split('Q')[-1]
-        last_num = int(last_num_str)
-    else:
-        last_num = 0  # If no quotes exist, start from 0
+    max_num = 0
 
-    # Increment and pad the number to keep consistent formatting (e.g., Q001)
-    new_quote_number = f"{prefix}{year_str}Q{str(last_num + 1).zfill(3)}"
+    for doc in matching_quotes_cursor:
+        match = re.search(rf"{prefix}{year_str}Q(\d+)", doc["quote_number"])
+        if match:
+            num = int(match.group(1))
+            max_num = max(max_num, num)
+
+    new_num = max_num + 1
+    new_quote_number = f"{prefix}{year_str}Q{str(new_num).zfill(3)}"
     return new_quote_number
-
 #################################### this section is for PDF generation ###########################################
 
 # @app.route('/adebeo_create_quotes', methods=['POST'])
