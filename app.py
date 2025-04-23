@@ -1110,27 +1110,50 @@ def add_comments():
     return jsonify(id=str(comment.inserted_id), message="user comment added sucessfully.")
 
 # Function to generate quote number
+# def generate_quote_number():
+#     current_year = datetime.now().year
+#     year_str = str(current_year)
+#     prefix = "AD"
+    
+#     # Query to find the last quote number for the current year
+#     last_quote_cursor = adebeo_quotes_collection.find({"quote_number": {"$regex": f"^{prefix}{year_str}Q"}}).sort("quote_number", -1).limit(1)
+
+#     # Convert the cursor to a list and check the length
+#     last_quote = list(last_quote_cursor)
+
+#     if len(last_quote) > 0:
+#         last_quote_number = last_quote[0]['quote_number']
+#         last_num = int(last_quote_number[-2:])  # Extract the last two digits (QXX format)
+#     else:
+#         last_num = 0  # If no quotes exist, start from 0
+    
+#     # Increment and pad the number
+#     new_quote_number = f"{prefix}{year_str}Q{str(last_num + 1).zfill(2)}"
+#     return new_quote_number
 def generate_quote_number():
     current_year = datetime.now().year
     year_str = str(current_year)
     prefix = "AD"
     
     # Query to find the last quote number for the current year
-    last_quote_cursor = adebeo_quotes_collection.find({"quote_number": {"$regex": f"^{prefix}{year_str}Q"}}).sort("quote_number", -1).limit(1)
+    last_quote_cursor = adebeo_quotes_collection.find(
+        {"quote_number": {"$regex": f"^{prefix}{year_str}Q"}}
+    ).sort("quote_number", -1).limit(1)
 
     # Convert the cursor to a list and check the length
     last_quote = list(last_quote_cursor)
 
-    if len(last_quote) > 0:
+    if last_quote:
         last_quote_number = last_quote[0]['quote_number']
-        last_num = int(last_quote_number[-2:])  # Extract the last two digits (QXX format)
+        # Extract everything after the last 'Q'
+        last_num_str = last_quote_number.split('Q')[-1]
+        last_num = int(last_num_str)
     else:
         last_num = 0  # If no quotes exist, start from 0
-    
-    # Increment and pad the number
-    new_quote_number = f"{prefix}{year_str}Q{str(last_num + 1).zfill(2)}"
-    return new_quote_number
 
+    # Increment and pad the number to keep consistent formatting (e.g., Q001)
+    new_quote_number = f"{prefix}{year_str}Q{str(last_num + 1).zfill(3)}"
+    return new_quote_number
 
 #################################### this section is for PDF generation ###########################################
 
