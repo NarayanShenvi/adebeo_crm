@@ -23,7 +23,9 @@ import uuid
 from urllib.parse import unquote
 from num2words import num2words
 import requests
-
+import asyncio
+#from flask_login import current_user
+#from motor.motor_asyncio import AsyncIOMotorClient
 
 # Set pymongo's log level to WARNING to avoid DEBUG logs from MongoDB
 logging.getLogger('pymongo').setLevel(logging.WARNING)
@@ -50,7 +52,10 @@ jwt = JWTManager(app)
 #MONGODB_URI = "mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm" #this was free trail
 MONGODB_URI = "mongodb+srv://narayan:9OfgyQys5pZ4kGfW@adebeocrm.rgook.mongodb.net/?retryWrites=true&w=majority&appName=adebeoCrm"
 # Connect to MongoDB
+
 client = MongoClient(MONGODB_URI)
+#client = AsyncIOMotorClient(MONGODB_URI)
+#db = client['your_database']
 
 CORS(app)
 #CORS(app, origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
@@ -83,6 +88,7 @@ adebeo_customer_collection.create_index([("companyName", "text")])
 #     level=logging.INFO,  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 #     format='%(asctime)s - %(levelname)s - %(message)s'
 # )
+
 
 # Decorator to protect routes and extract user info
 def login_required(f):
@@ -124,6 +130,7 @@ def login_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
 
 # app = Flask(__name__)
 # app.config["MONGO_URI"] = "mongodb://localhost/crudapp"
@@ -254,6 +261,7 @@ def convert_objectid_to_str(data):
         return data
 
 
+
 # @app.route("/funnel_users", methods=["GET"])
 # @login_required
 # def get_funnel_users():
@@ -303,10 +311,8 @@ def convert_objectid_to_str(data):
 #             # Create a regex pattern for fuzzy and case-insensitive matching
 #             pattern = re.compile(re.escape(company_name_decoded), re.IGNORECASE)
 #             logging.info(f"Regex pattern for matching: {pattern}")
-            
 
 #             funnel_data_filtered = []
-#             seen_customers = set()  # To avoid processing the same customer multiple times
 #             for funnel_entry in funnel_data:
 #                 customer_id = funnel_entry.get('customer_id')
 #                 if not customer_id:
@@ -390,6 +396,7 @@ def convert_objectid_to_str(data):
 #         logging.error(f"Error occurred: {str(e)}")
 #         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
+# Route to handle funnel users
 @app.route("/funnel_users", methods=["GET"])
 @login_required
 def get_funnel_users():
@@ -1151,6 +1158,8 @@ def generate_quote_number():
     new_num = max_num + 1
     new_quote_number = f"{prefix}{year_str}Q{str(new_num).zfill(3)}"
     return new_quote_number
+
+
 #################################### this section is for PDF generation ###########################################
 
 # @app.route('/adebeo_create_quotes', methods=['POST'])
@@ -3274,8 +3283,12 @@ def get_cxpayment():
         #     .sort("insertDate", -1) \
         #     .skip(skip) \
         #     .limit(limit)
-        invoices_cursor = list(invoice_collection.find().skip(skip).limit(per_page))
-
+        #invoices_cursor = list(invoice_collection.find().skip(skip).limit(per_page))
+        invoices_cursor = list(invoice_collection.find()
+                       .sort("invoice_date", -1)  # or use "insertDate", depending on your schema
+                       .skip(skip)
+                       .limit(per_page))
+                       
         if not invoices_cursor:
             return jsonify({"message": "No payment data found."}), 404
 
@@ -3471,8 +3484,23 @@ def process_payment():
 ########################### Report for user #############################
 
 # Helper functions to fetch data based on the report type
-def get_comment_activity(company_filter, date_filter, skip, limit):
-    comments = adebeo_customer_comments.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
+def get_comment_activity(company_filter, start_date,end_date, skip, limit,user=None):
+    
+    date_filter = {
+        'insertDate': {
+            '$gte': start_date,
+            '$lte': end_date
+        }
+    }
+
+      # Add the user filter if the user is provided
+    if user:
+        company_filter['insertBy'] = user
+
+    # Combine company filter, date filter, and user filter
+    #filters = {**company_filter, **date_filter}
+
+    comments = adebeo_customer_comments.find({**company_filter,**date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
     activities = []
     
     for comment in comments:
@@ -3492,7 +3520,19 @@ def get_comment_activity(company_filter, date_filter, skip, limit):
     return activities
     
 
-def get_quote_activity(company_filter, date_filter, skip, limit):
+def get_quote_activity(company_filter, start_date,end_date, skip, limit,user=None):
+    if user:
+        company_filter['insertBy'] = user
+
+    date_filter = {
+        'insertDate': {
+            '$gte': start_date,
+            '$lte': end_date
+        }
+    }
+    if user:
+        company_filter['insertBy'] = user
+
     quotes = list(adebeo_quotes_collection.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1))
     activities = []
     
@@ -3512,7 +3552,16 @@ def get_quote_activity(company_filter, date_filter, skip, limit):
     
     return activities
 
-def get_proforma_activity(company_filter, date_filter, skip, limit):
+def get_proforma_activity(company_filter, start_date,end_date, skip, limit,user=None):
+    if user:
+        company_filter['insertBy'] = user
+
+    date_filter = {
+        'insertDate': {
+            '$gte': start_date,
+            '$lte': end_date
+        }
+    }
     proformas = adebeo_performa_collection.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
     activities = []
     
@@ -3532,7 +3581,13 @@ def get_proforma_activity(company_filter, date_filter, skip, limit):
     
     return activities
 
-def get_invoice_activity(company_filter, date_filter, skip, limit):
+def get_invoice_activity(company_filter, start_date,end_date, skip, limit):
+    date_filter = {
+        'insertDate': {
+            '$gte': start_date,
+            '$lte': end_date
+        }
+    }    
     invoices = adebeo_invoice_collection.find({**company_filter, **date_filter}).skip(skip).limit(limit).sort("insertDate", 1)
     activities = []
     
@@ -3563,43 +3618,91 @@ def convert_to_datetime(date_str):
             return None  # Handle invalid format if needed
     return date_str  # Return datetime if already in datetime format
 
-def get_customer_activity(start_date_str, end_date_str):
-    # Define the time zone (if your times are in IST)
-    india_timezone = pytz.timezone('Asia/Kolkata')
+def get_customer_activity(start_date_str, end_date_str, company_filter=None, skip=0, limit=10):
+    """Fetch customer activity data based on a date range and optional company filter."""
 
-    # Convert the start and end date strings into datetime objects
+    # Convert date strings to datetime objects
     start_date = convert_to_datetime(start_date_str)
     end_date = convert_to_datetime(end_date_str)
-
+    
     if not start_date or not end_date:
-        # Handle invalid date format
-        return {"error": "Invalid date format"}
+        logging.error("Invalid date format. Cannot proceed.")
+        return []
 
-    # Localize the dates to IST first
-    start_date = india_timezone.localize(start_date)
-    end_date = india_timezone.localize(end_date)
+    # Log the date range being used
+    logging.debug(f"Using start_date: {start_date} and end_date: {end_date}")
 
-    # Set times to the beginning and end of the day
-    start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-    # Convert both to UTC for MongoDB query
-    start_date_utc = start_date.astimezone(pytz.UTC)
-    end_date_utc = end_date.astimezone(pytz.UTC)
-
-    # Construct the query filter for MongoDB
+    # Set up the date filter for aggregation
     date_filter = {
-        'insertDate': {
-            '$gte': start_date_utc,  # Start of the day in UTC
-            '$lte': end_date_utc     # End of the day in UTC
-        }
+        '$gte': start_date,
+        '$lte': end_date
     }
 
-    # Assuming your MongoDB collection is called `adebeo_customer_collection`
-    customer_activities = adebeo_customer_collection.find(date_filter)
+    # Aggregate pipeline to convert insertDate (string) to datetime and filter by the range
+    pipeline = [
+        {
+            '$addFields': {
+                'insertDate': {
+                    '$dateFromString': {
+                        'dateString': '$insertDate',  # Assuming 'insertDate' is a string field
+                        'format': "%Y-%m-%d %H:%M:%S"  # Adjust the format as needed
+                    }
+                }
+            }
+        },
+        {
+            '$match': {
+                'insertDate': date_filter,
+                **(company_filter if company_filter else {})  # Add company filters if provided
+            }
+        },
+        {
+            '$sort': {
+                'insertDate': 1  # Sorting by insertDate in ascending order
+            }
+        },
+        {
+            '$skip': skip
+        },
+        {
+            '$limit': limit
+        }
+    ]
 
-    # Log the number of activities fetched (if needed)
-    activities = list(customer_activities)
+    # Run the aggregation pipeline
+    customer_activities = adebeo_customer_collection.aggregate(pipeline)
+
+    # Log the number of activities fetched
+    activities_list = list(customer_activities)
+    logging.debug(f"Fetched customer activities: {activities_list}")
+
+    # Process the activities
+    activities = []
+    for activity in activities_list:
+        customer_id = activity.get('_id')
+        logging.debug(f"Processing customer_id: {customer_id}")
+
+        if '_id' not in activity:
+            logging.warning("Missing _id in the activity. Skipping this entry.")
+            continue
+        
+        if 'companyName' not in activity:
+            logging.warning("Missing companyName in the activity. Skipping this entry.")
+            continue
+        
+        # Fetch customer name (example method, customize as per your requirements)
+        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'
+
+        # Prepare the activity data to be returned
+        activity_data = {
+            "activity_type": "Customer",
+            "insertDate": activity['insertDate'],
+            "insertBy": activity.get('insertBy', 'Unknown'),
+            "details": f"Activity Type: Customer Add/ Edit, Details: {activity.get('primaryEmail', 'No details available')}",
+            "company_name": activity.get('companyName', 'Unknown')
+        }
+        activities.append(activity_data)
+
     return activities
 
     
@@ -3608,102 +3711,155 @@ def sort_activities(activities):
     return sorted(activities, key=lambda x: x['insertDate'])
 
 # Route to fetch the activity report with pagination and report type
-# Route to fetch the activity report with pagination and report type
-# Route to fetch the activity report with pagination and report type
 @app.route('/activity_report', methods=['GET'])
 def get_activity_report():
     # Get parameters from the request
     start_date = request.args.get('startDate', None)
     end_date = request.args.get('endDate', None)
-    company_name = request.args.get('companyName', None)  # This will be None if not provided
+    company_name = request.args.get('companyName', None)
     user = request.args.get('user', None)
     page = int(request.args.get('page', 1))  # Default page 1
     per_page = int(request.args.get('per_page', 10))  # Default per page 10
+
+    # Debug: Print the received parameters
+    print(f"Received Parameters - Start Date: {start_date}, End Date: {end_date}, Company Name: {company_name}, User: {user}, Page: {page}, Per Page: {per_page}")
+    
+    # Validate per_page is positive
+    if per_page <= 0:
+        return jsonify({"error": "'per_page' must be a positive number"}), 400
 
     # Calculate skip value for pagination
     skip = (page - 1) * per_page
 
     # If start date or end date is not provided, set default values for the current date
     if not start_date:
-        # Set start date to midnight of current date
         start_date = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
     else:
-        # If start_date is provided, append 'T00:00:00' for midnight if time is not specified
         if 'T' not in start_date:
             start_date += 'T00:00:00'
         start_date = datetime.fromisoformat(start_date)
 
     if not end_date:
-        # Set end date to 23:59:59 of current date
         end_date = datetime.today().replace(hour=23, minute=59, second=59, microsecond=999999)
     else:
-        # If end_date is provided, append 'T23:59:59' for the end of the day if time is not specified
         if 'T' not in end_date:
             end_date += 'T23:59:59'
         end_date = datetime.fromisoformat(end_date)
 
-    # Build the company filter
     company_filter = {}
     if company_name:
-        company_filter['company_name'] = company_name  # Only include if companyName was provided
+        company_filter['company_name'] = company_name
 
-    # Build the date filter
-    date_filter = {
-        'insertDate': {
-            '$gte': start_date,
-            '$lte': end_date
-        }
-    }
-
-    # Add user filter if user is provided
-    if user:
-        date_filter['insertBy'] = user  # Add condition for the specific user (assuming it's stored in 'insertBy')
+    # Debug: Print the final filters
+    print(f"Company Filter: {company_filter}, Start Date: {start_date}, End Date: {end_date}")
 
     try:
-        # Fetch data from different collections with pagination
-        comment_activity = get_comment_activity(company_filter, date_filter, skip, per_page)
-        quote_activity = get_quote_activity(company_filter, date_filter, skip, per_page)
-        proforma_activity = get_proforma_activity(company_filter, date_filter, skip, per_page)
-        invoice_activity = get_invoice_activity(company_filter, date_filter, skip, per_page)
-        customer_activity = get_customer_activity(company_filter, start_date, end_date, skip, per_page)  # New line for customer activity
-        # Combine all activities into one list
+        # Get filtered activities with pagination for each type of activity
+        comment_activity = get_comment_activity(company_filter, start_date, end_date, skip, per_page, user)
+        quote_activity = get_quote_activity(company_filter, start_date, end_date, skip, per_page, user)
+        proforma_activity = get_proforma_activity(company_filter, start_date, end_date, skip, per_page)
+        invoice_activity = get_invoice_activity(company_filter, start_date, end_date, skip, per_page)
+        customer_activity = get_customer_activity(start_date, end_date, company_filter, skip, per_page)
+
+        # Debug: Print number of activities retrieved for each type
+        print(f"Fetched Activities: Comment: {len(comment_activity)}, Quote: {len(quote_activity)}, Proforma: {len(proforma_activity)}, Invoice: {len(invoice_activity)}, Customer: {len(customer_activity)}")
+
+        # Merge all activities
         activities = comment_activity + quote_activity + proforma_activity + invoice_activity + customer_activity
 
+        # Debug: Print total activities before sorting
+        print(f"Total Activities (before sorting): {len(activities)}")
+
         # Sort activities by insertDate (timestamp)
-        sorted_activities = sort_activities(activities)
+        activities = sorted(activities, key=lambda x: x['insertDate'], reverse=True)
 
-        # Now, we need to add customer names to the activities if companyName was not provided
-        if not company_name:
-            for activity in sorted_activities:
-                # Assume the customer_id exists in each activity
-                customer_id = activity.get("customer_id")
-                if customer_id:
-                    # You need to query the `customer` collection or whatever collection contains `customer_name`
-                    customer_data = get_customer_data_by_id(customer_id)  # A function to get customer data
-                    activity['customer_name'] = customer_data.get('name', 'Unknown')  # Add the name to activity
-                    # Replace company_name with customer_name
-                    activity['company_name'] = activity['customer_name']  # You may choose to remove or update 'company_name'
+        # Debug: Print total activities after sorting
+        print(f"Total Activities (after sorting): {len(activities)}")
 
-        # Count total records to calculate total pages
-        total_count = adebeo_customer_comments.count_documents({**company_filter, **date_filter}) + \
-                      adebeo_quotes_collection.count_documents({**company_filter, **date_filter}) + \
-                      adebeo_performa_collection.count_documents({**company_filter, **date_filter}) + \
-                      adebeo_invoice_collection.count_documents({**company_filter, **date_filter})
+        # Calculate total count for each collection and print them
+        comment_count = get_comment_activity_count(company_filter, start_date, end_date, user)
+        quote_count = get_quote_activity_count(company_filter, start_date, end_date, user)
+        proforma_count = get_proforma_activity_count(company_filter, start_date, end_date)
+        invoice_count = get_invoice_activity_count(company_filter, start_date, end_date)
+        customer_count = get_customer_activity_count(company_filter, start_date, end_date)
 
-        total_pages = (total_count + per_page - 1) // per_page  # Calculate total pages
+        # Debug: Print individual counts
+        print(f"Individual Counts - Comment: {comment_count}, Quote: {quote_count}, Proforma: {proforma_count}, Invoice: {invoice_count}, Customer: {customer_count}")
+
+        # Total count is the sum of individual counts
+        total_count = comment_count + quote_count + proforma_count + invoice_count + customer_count
+
+        # Debug: Print total count
+        print(f"Total Count (after summing individual counts): {total_count}")
+
+        # Calculate total pages based on the filtered total count
+        total_pages = (total_count + per_page - 1) // per_page
+
+        # Debug: Print total pages
+        print(f"Total Pages: {total_pages}")
+
+        # Apply pagination to the merged activities
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_activities = activities[start_idx:end_idx]
 
         # Return paginated response with metadata
         return jsonify({
             "currentPage": page,
             "totalPages": total_pages,
             "totalCount": total_count,
-            "activities": sorted_activities
+            "activities": paginated_activities
         })
 
     except Exception as e:
+        # Debug: Print error message
+        print(f"Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-   # Function to format the date with default times (00:00:00 for start and 23:59:59 for end)
+
+
+def get_comment_activity_count(company_filter, start_date, end_date, user=None):
+    # Filter based on date range and company filter
+    query = {"insertDate": {"$gte": start_date, "$lte": end_date}}
+    if company_filter:
+        query.update(company_filter)
+    if user:
+        query["insertBy"] = user
+    
+    # Return the count of comment activities that match the filter
+    return adebeo_customer_comments.count_documents(query)
+
+def get_quote_activity_count(company_filter, start_date, end_date, user=None):
+    query = {"insertDate": {"$gte": start_date, "$lte": end_date}}
+    if company_filter:
+        query.update(company_filter)
+    if user:
+        query["insertBy"] = user
+    
+    return adebeo_quotes_collection.count_documents(query)
+
+def get_proforma_activity_count(company_filter, start_date, end_date):
+    query = {"insertDate": {"$gte": start_date, "$lte": end_date}}
+    if company_filter:
+        query.update(company_filter)
+    
+    return adebeo_performa_collection.count_documents(query)
+
+def get_invoice_activity_count(company_filter, start_date, end_date):
+    query = {"insertDate": {"$gte": start_date, "$lte": end_date}}
+    if company_filter:
+        query.update(company_filter)
+    
+    return adebeo_invoice_collection.count_documents(query)
+
+def get_customer_activity_count(company_filter, start_date, end_date):
+    query = {"insertDate": {"$gte": start_date, "$lte": end_date}}
+    if company_filter:
+        query.update(company_filter)
+    
+    return adebeo_customer_collection.count_documents(query)
+
+# Function to format the date with default times (00:00:00 for start and 23:59:59 for end)
 def format_datetime_for_query(date_str, default_time):
     if not date_str:
         return None
@@ -3756,26 +3912,67 @@ def get_customer_data_by_id(customer_id):
     return customer if customer else {}
 
 @app.route('/current_adebeo_users', methods=['GET'])
+@login_required
 def current_adebeo_users():
+    claims = get_jwt()
+    user_role = claims.get("role")
+    username = request.user
+    #user_username = claims.get("username")  # Assuming you also store the username in the claims
+
     try:
-        # Assuming your MongoDB collection is named `adebeo_users_collection`
-        users = adebeo_users_collection.find({}, {'password': 0, '__v': 0})  # Excluding password and other sensitive fields
-        
-        # Mapping the result to a cleaner format (removing _id and renaming if necessary)
+        # If the user is an admin, show all users
         users_list = []
-        for user in users:
+        if user_role == "admin":
+            # Assuming your MongoDB collection is named `adebeo_users_collection`
+            users = adebeo_users_collection.find({}, {'password': 0, '__v': 0})  # Excluding password and other sensitive fields
+            
+            # Mapping the result to a cleaner format (removing _id and renaming if necessary)
+            users_list = []
+            for user in users:
+                user_data = {
+                    'username': user['username'],
+                    'role': user['role']
+                }
+                users_list.append(user_data)
+            
+            return jsonify(users_list)
+        
+        # If the user is not an admin, show only their own information
+        else:
+            user = adebeo_users_collection.find_one({"username": username}, {'password': 0, '__v': 0})
+            
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            
             user_data = {
                 'username': user['username'],
                 'role': user['role']
             }
             users_list.append(user_data)
-        
-        return jsonify(users_list)
+            return jsonify(users_list)
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# @app.route('/current_adebeo_users', methods=['GET'])
+# def current_adebeo_users():
+#     try:
+#         # Assuming your MongoDB collection is named `adebeo_users_collection`
+#         users = adebeo_users_collection.find({}, {'password': 0, '__v': 0})  # Excluding password and other sensitive fields
+        
+#         # Mapping the result to a cleaner format (removing _id and renaming if necessary)
+#         users_list = []
+#         for user in users:
+#             user_data = {
+#                 'username': user['username'],
+#                 'role': user['role']
+#             }
+#             users_list.append(user_data)
+        
+#         return jsonify(users_list)
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
 
 
 if __name__ == "__main__":
