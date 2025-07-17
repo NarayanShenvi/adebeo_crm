@@ -24,6 +24,7 @@ from urllib.parse import unquote
 from num2words import num2words
 import requests
 import asyncio
+import pprint
 #from flask_login import current_user
 #from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -58,7 +59,7 @@ client = MongoClient(MONGODB_URI)
 #db = client['your_database']
 
 CORS(app)
-#CORS(app, origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
+#CORS(app, origins="http://localhost:5000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
 #mongo = PyMongo(client)
 db = client["adebeocrm"]
 
@@ -261,7 +262,134 @@ def convert_objectid_to_str(data):
         return data
 
 
+@app.route("/funnel_users", methods=["GET"])
+@login_required
+def get_funnel_users():
+    username = request.user
+    claims = get_jwt()
+    user_role = claims.get("role")
 
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 10))
+        company_name = request.args.get('companyName', None)
+        skip = (page - 1) * limit
+
+        # Filter assigned_to if not admin or tech
+        match_filter = {}
+        if user_role not in ['admin', 'tech']:
+            match_filter["assigned_to"] = username
+
+        # Prepare company name regex
+        company_name_regex = None
+        if company_name:
+            company_name_decoded = unquote(company_name).strip()
+            company_name_regex = re.escape(company_name_decoded)
+
+        pipeline = []
+
+        if match_filter:
+            pipeline.append({ "$match": match_filter })
+
+        # Lookup customers (customer_id is string)
+        pipeline.append({
+            "$lookup": {
+                "from": "adebeo_customers",
+                "let": { "cust_id_str": "$customer_id" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$eq": ["$_id", { "$toObjectId": "$$cust_id_str" }]
+                            }
+                        }
+                    }
+                ],
+                "as": "customer"
+            }
+        })
+
+        # Unwind customer array
+        pipeline.append({
+            "$unwind": {
+                "path": "$customer",
+                "preserveNullAndEmptyArrays": False
+            }
+        })
+
+        # Optional company name filter
+        if company_name_regex:
+            pipeline.append({
+                "$match": {
+                    "customer.companyName": {
+                        "$regex": company_name_regex,
+                        "$options": "i"
+                    }
+                }
+            })
+
+        # Count total records
+        count_pipeline = pipeline + [{ "$count": "total" }]
+        count_result = list(db.adebeo_funnel.aggregate(count_pipeline))
+        total_records = count_result[0]["total"] if count_result else 0
+        total_pages = (total_records // limit) + (1 if total_records % limit else 0)
+
+        # Pagination
+        pipeline.extend([
+            { "$skip": skip },
+            { "$limit": limit }
+        ])
+
+        # Lookup comments
+        pipeline.append({
+            "$lookup": {
+                "from": "adebeo_customer_comments",
+                "let": { "customer_id_str": { "$toString": "$customer._id" } },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": { "$eq": ["$customer_id", "$$customer_id_str"] }
+                        }
+                    }
+                ],
+                "as": "comments"
+            }
+        })
+
+        # Final projection — flatten customer and merge comments
+        pipeline.append({
+            "$replaceRoot": {
+                "newRoot": {
+                    "$mergeObjects": ["$customer", { "comments": "$comments" }]
+                }
+            }
+        })
+
+        # Execute final pipeline
+        results = list(db.adebeo_funnel.aggregate(pipeline))
+
+        # Convert ObjectIds to strings
+        for r in results:
+            r["_id"] = str(r["_id"])
+            for comment in r.get("comments", []):
+                comment["_id"] = str(comment["_id"])
+                comment["customer_id"] = str(comment["customer_id"])
+
+        # Return response
+        return jsonify({
+            "data": results,
+            "limit": limit,
+            "page": page,
+            "total_pages": total_pages,
+            "total_records": total_records
+        })
+
+    except Exception as e:
+        return jsonify({ "message": "An error occurred", "error": str(e) }), 500
+
+
+
+# # Route to handle funnel users 
 # @app.route("/funnel_users", methods=["GET"])
 # @login_required
 # def get_funnel_users():
@@ -395,141 +523,6 @@ def convert_objectid_to_str(data):
 #     except Exception as e:
 #         logging.error(f"Error occurred: {str(e)}")
 #         return jsonify({"message": "An error occurred", "error": str(e)}), 500
-
-# Route to handle funnel users
-@app.route("/funnel_users", methods=["GET"])
-@login_required
-def get_funnel_users():
-    username = request.user
-    
-    claims = get_jwt()
-    user_role = claims.get("role") 
-
-    try:
-        # Get query params for pagination and search
-        page = int(request.args.get('page', 1))  # Page number from URL query param
-        limit = int(request.args.get('limit', 10))  # Number of items per page from URL query param
-        company_name = request.args.get('companyName', None)  # Company name for search
-
-        # Log the received parameters
-        logging.info(f"Received parameters - page: {page}, limit: {limit}, company_name: {company_name}")
-
-        # Fetch all funnel data assigned to the current user (no pagination yet)
-        # funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
-        # funnel_data = list(funnel_data_cursor)
-          # If the user is an 'admin' or 'tech', fetch all users' funnel data
-        if user_role in ['admin', 'tech']:
-            funnel_data_cursor = adebeo_user_funnel.find()  # No user-specific filtering
-        else:
-            # For a regular 'user', filter by their username
-            funnel_data_cursor = adebeo_user_funnel.find({"assigned_to": username})
-        
-        funnel_data = list(funnel_data_cursor)
-
-        # Log all the fetched funnel data (can be a large amount, be careful with logging it in production)
-        logging.info(f"Funnel data fetched for user '{username}': {len(funnel_data)} records")
-
-        # Log each funnel entry to verify the data (for debugging purposes)
-        for entry in funnel_data:
-            logging.debug(f"Funnel entry: {entry}")
-
-        # Check if funnel data is found
-        if not funnel_data:
-            logging.warning("No funnel data found")
-            return jsonify({"message": "No funnel data found"}), 404
-
-        # If company_name is provided, filter customers based on it (case-insensitive fuzzy matching)
-        if company_name:
-            company_name_decoded = unquote(company_name).strip().lower()
-            logging.info(f"Decoded company_name for filtering: {company_name_decoded}")
-
-            # Create a regex pattern for fuzzy and case-insensitive matching
-            pattern = re.compile(re.escape(company_name_decoded), re.IGNORECASE)
-            logging.info(f"Regex pattern for matching: {pattern}")
-
-            funnel_data_filtered = []
-            for funnel_entry in funnel_data:
-                customer_id = funnel_entry.get('customer_id')
-                if not customer_id:
-                    logging.warning(f"Funnel entry missing customer_id: {funnel_entry}")
-                    continue
-
-                # Fetch the customer data for each funnel entry
-                customer = db['adebeo_customers'].find_one({"_id": ObjectId(customer_id)})
-                if customer:
-                    company_name_in_customer = customer.get('companyName', '').lower()
-                    logging.info(f"Comparing '{company_name_in_customer}' with '{company_name_decoded}'")
-
-                    if pattern.search(company_name_in_customer):
-                        funnel_data_filtered.append(funnel_entry)
-                        logging.info(f"Match found for customer: {company_name_in_customer}")
-                    else:
-                        logging.info(f"No match for customer: {company_name_in_customer}")
-                else:
-                    logging.warning(f"Customer with ID {customer_id} not found in 'adebeo_customers'")
-
-            # Log the filtered data
-            logging.info(f"Filtered funnel data: {len(funnel_data_filtered)} records matching company_name")
-
-            # Update the funnel data with the filtered list
-            funnel_data = funnel_data_filtered
-
-        # If no customers matched the company_name filter (if provided)
-        if not funnel_data:
-            logging.warning(f"No customers found matching the company name '{company_name}'")
-            return jsonify({"message": f"No customers found matching the company name '{company_name}'"}), 404
-
-        # Apply pagination now (after filtering)
-        total_records = len(funnel_data)
-        total_pages = (total_records // limit) + (1 if total_records % limit else 0)
-        logging.info(f"Total records after filtering: {total_records}, Total pages: {total_pages}, Pagination skip: {(page - 1) * limit}, limit: {limit}")
-
-        # Calculate the skip value and apply it to the filtered funnel data
-        skip = (page - 1) * limit
-        paginated_data = funnel_data[skip:skip+limit]
-
-        # Log paginated data
-        logging.info(f"Paginated funnel data: {len(paginated_data)} records for page {page}")
-
-        # Add comments for each customer in the paginated data
-        customer_with_comments = []
-        for funnel_entry in paginated_data:
-            customer_id = funnel_entry.get('customer_id')
-            customer = db['adebeo_customers'].find_one({"_id": ObjectId(customer_id)})
-            if customer:
-                comments_cursor = db['adebeo_customer_comments'].find({"customer_id": str(customer['_id'])})
-                comments = list(comments_cursor)
-                customer['comments'] = comments
-                customer_with_comments.append(customer)
-                logging.info(f"Added comments for customer: {customer.get('companyName', 'Unknown Company')}")
-            else:
-                logging.warning(f"Customer with ID {customer_id} not found in 'adebeo_customers'")
-
-        # Convert ObjectId fields to strings
-        customer_with_comments = convert_objectid_to_str(customer_with_comments)
-
-        # Log the final customer data with comments
-        logging.info(f"Customer data with comments: {len(customer_with_comments)} records")
-
-        # Return the response with pagination data
-        response_data = {
-            "data": customer_with_comments,
-            "limit": limit,
-            "page": page,
-            "total_pages": total_pages,
-            "total_records": total_records
-        }
-
-        logging.info(f"Returning response: {response_data}")
-        return jsonify(response_data)
-
-    except ValueError as ve:
-        logging.error(f"ValueError occurred: {str(ve)}")
-        return jsonify({"message": "Validation error", "error": str(ve)}), 400
-    
-    except Exception as e:
-        logging.error(f"Error occurred: {str(e)}")
-        return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
 
 
