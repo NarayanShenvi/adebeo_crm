@@ -2341,123 +2341,242 @@ def generate_invoice_number():
 
     # Increment the last number and format it properly (up to 9999 orders)
     new_invoice_number = f"{prefix}{year_str}IN{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
-
     return new_invoice_number    
  
+
+def extract_proforma_num(proforma_id):
+    try:
+        idx = proforma_id.index("P")
+        return int(proforma_id[idx+1:])
+    except Exception:
+        return 0
 
 @app.route("/get_proformas_for_purchase_order", methods=["GET"])
 @login_required
 def get_proformas():
-    username = request.user
-
-    claims = get_jwt()
-    user_role = claims.get("role") 
-    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
-
-    # Ensure the user is an admin
-    if user_role != "admin":
-        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+    # ... [same JWT + role check code] ...
 
     try:
-        # Fetch Proformas where Purchase_status is False or missing
-        proformas = adebeo_performa_collection.find({
-            "$or": [{"purchase_status": False}, {"purchase_status": {"$exists": False}}]
-        })
-
-        if not proformas:
-            logging.error("No proformas found in the collection.")
-        
-        proforma_list = []
-
-        # Loop through each proforma to get the associated customer name
-        for proforma in proformas:
-            customer_id = proforma.get("customer_id")
-            if not customer_id:
-                logging.warning(f"Proforma {proforma.get('performa_number')} is missing 'customer_id'. Skipping this proforma.")
-                continue
-
-            try:
-                # Convert customer_id to ObjectId before querying the customer collection
-                customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
-
-                if customer is None:
-                    logging.warning(f"Customer with ID {customer_id} not found for proforma {proforma.get('performa_number')}.")
-                    continue
-
-            except Exception as e:
-                logging.error(f"Error converting customer_id '{customer_id}' to ObjectId or fetching customer: {e}")
-                continue  # Skip this proforma on error
-
-            # Initialize proforma info
-            proforma_info = {
-                "proforma_id": proforma.get("performa_number", "Unknown"),
-                "proforma_tag": proforma.get("preformaTag", "Unknown"),
-                "customer_name": customer.get("companyName", "Unknown"),
-                "items": []
-            }
-
-            # Loop through items in the proforma to fetch product details
-            for item in proforma.get("items", []):
-                # Get the product_id, which corresponds to the product's _id in the product collection
-                product_id = item.get("product_id")
-                if not product_id:
-                    logging.warning(f"Item in proforma {proforma.get('performa_number')} is missing 'product_id'. Skipping this item.")
-                    continue
-
-                try:
-                    # Fetch the product from the adebeo_products collection using the ObjectId
-                    product = adebeo_products.find_one({"_id": ObjectId(product_id)})
-
-                    if product is None:
-                        logging.warning(f"Product with ID {product_id} not found for item in proforma {proforma.get('performa_number')}.")
-                        continue
-
-                    # Add product details to the item
-                    item_info = {
-                        "description": product.get("ProductDisplay", "No description"),  # Product display name
-                        "product_name": product.get("productName", "Unknown Product"),
-                        "product_code": product.get("productCode", "Unknown Code"),
-                        "company_name": product.get("ProductCompanyName", "Unknown Company"),
-                        "contact": product.get("Contact", "-"),
-                        "telephone": product.get("telephone", "-"),
-                        "address": product.get("address", "No address"),
-                        "company_gstin": product.get("companyGstin", "No GSTIN"),
-                        "primary_locality": product.get("primaryLocality", "No locality"),
-                        "secondary_locality": product.get("secondaryLocality", "No locality"),
-                        "city": product.get("city", "Unknown City"),
-                        "state": product.get("state", "Unknown State"),
-                        "pincode": product.get("pincode", "No Pincode"),
-                        "email": product.get("email", "No email"),
-                        "sales_code": product.get("salesCode", "No sales code"),
-                        "purchase_cost": product.get("purchaseCost", 0),  # purchaseCost field from the product
-                        "quantity": item.get("quantity", 0),
-                        "sub_total": item.get("sub_total", 0),
-                        "unit_price": item.get("unit_price", 0),
-                        "discount": item.get("discount", 0),
-                        "dr_status": item.get("dr_status", ""),
-                        "subscriptionDuration":product.get("subscriptionDuration","1 Year")
-                    
+        pipeline = [
+            {
+                "$match": {
+                    "$or": [
+                        {"purchase_status": False},
+                        {"purchase_status": {"$exists": False}}
+                    ]
+                }
+            },
+            {
+                "$lookup": {
+                    "from": "adebeo_customers",
+                    "let": {"cust_id": {"$toObjectId": "$customer_id"}},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$cust_id"]}}}
+                    ],
+                    "as": "customer"
+                }
+            },
+            {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": True}},
+            {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},
+            {
+                "$lookup": {
+                    "from": "adebeo_products",
+                    "let": {"prod_id": {"$toObjectId": "$items.product_id"}},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$prod_id"]}}}
+                    ],
+                    "as": "product"
+                }
+            },
+            {"$unwind": {"path": "$product", "preserveNullAndEmptyArrays": True}},
+            {
+                "$addFields": {
+                    "item_info": {
+                        "description": {"$ifNull": ["$product.ProductDisplay", "No description"]},
+                        "product_name": {"$ifNull": ["$product.productName", "Unknown Product"]},
+                        "product_code": {"$ifNull": ["$product.productCode", "Unknown Code"]},
+                        "company_name": {"$ifNull": ["$product.ProductCompanyName", "Unknown Company"]},
+                        "contact": {"$ifNull": ["$product.Contact", "-"]},
+                        "telephone": {"$ifNull": ["$product.telephone", "-"]},
+                        "address": {"$ifNull": ["$product.address", "No address"]},
+                        "company_gstin": {"$ifNull": ["$product.companyGstin", "No GSTIN"]},
+                        "primary_locality": {"$ifNull": ["$product.primaryLocality", "No locality"]},
+                        "secondary_locality": {"$ifNull": ["$product.secondaryLocality", "No locality"]},
+                        "city": {"$ifNull": ["$product.city", "Unknown City"]},
+                        "state": {"$ifNull": ["$product.state", "Unknown State"]},
+                        "pincode": {"$ifNull": ["$product.pincode", "No Pincode"]},
+                        "email": {"$ifNull": ["$product.email", "No email"]},
+                        "sales_code": {"$ifNull": ["$product.salesCode", "No sales code"]},
+                        "purchase_cost": {"$ifNull": ["$product.purchaseCost", 0]},
+                        "quantity": {"$ifNull": ["$items.quantity", 0]},
+                        "sub_total": {"$ifNull": ["$items.sub_total", 0]},
+                        "unit_price": {"$ifNull": ["$items.unit_price", 0]},
+                        "discount": {"$ifNull": ["$items.discount", 0]},
+                        "dr_status": {"$ifNull": ["$items.dr_status", ""]},
+                        "subscriptionDuration": {"$ifNull": ["$product.subscriptionDuration", "1 Year"]}
                     }
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "number": "$performa_number",
+                        "tag": "$preformaTag"
+                    },
+                    "customer_name": {"$first": {"$ifNull": ["$customer.companyName", "Unknown"]}},
+                    "items": {"$push": "$item_info"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "proforma_id": "$_id.number",
+                    "proforma_tag": "$_id.tag",
+                    "customer_name": 1,
+                    "items": 1
+                }
+            }
+        ]
 
-                    # Append item with full product details to the proforma's items list
-                    proforma_info["items"].append(item_info)
+        results = list(adebeo_performa_collection.aggregate(pipeline))
 
-                except Exception as e:
-                    logging.error(f"Error fetching product with ID '{product_id}' for item in proforma {proforma.get('performa_number')}: {e}")
-                    continue  # Skip this item if there’s an error fetching the product
+        # Python-side sort descending by numeric suffix after "P"
+        results.sort(key=lambda x: extract_proforma_num(x.get("proforma_id", "")), reverse=True)
 
-            # Append this proforma's details to the result list
-            proforma_list.append(proforma_info)
+        # Convert ObjectIds in nested dicts to strings if any
+        def convert_ids(obj):
+            if isinstance(obj, list):
+                return [convert_ids(i) for i in obj]
+            elif isinstance(obj, dict):
+                return {
+                    k: str(v) if isinstance(v, ObjectId) else convert_ids(v)
+                    for k, v in obj.items()
+                }
+            return obj
 
-        # If no proformas were found, log the info
-        if not proforma_list:
-            logging.info("No proformas with valid items and products were found.")
+        results = convert_ids(results)
 
-        return jsonify(proforma_list)
+        return jsonify(results)
 
     except Exception as e:
-        logging.error(f"An error occurred while fetching proformas: {e}")
-        return jsonify({"error": "Internal Server Error. Please try again later."}), 500
+        logging.error(f"Error in get_proformas: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+
+# @app.route("/get_proformas_for_purchase_order", methods=["GET"])
+# @login_required
+# def get_proformas():
+#     username = request.user
+
+#     claims = get_jwt()
+#     user_role = claims.get("role") 
+#     #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+#     # Ensure the user is an admin
+#     if user_role != "admin":
+#         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#     try:
+#         # Fetch Proformas where Purchase_status is False or missing
+#         proformas = adebeo_performa_collection.find({
+#             "$or": [{"purchase_status": False}, {"purchase_status": {"$exists": False}}]
+#         })
+
+#         if not proformas:
+#             logging.error("No proformas found in the collection.")
+        
+#         proforma_list = []
+
+#         # Loop through each proforma to get the associated customer name
+#         for proforma in proformas:
+#             customer_id = proforma.get("customer_id")
+#             if not customer_id:
+#                 logging.warning(f"Proforma {proforma.get('performa_number')} is missing 'customer_id'. Skipping this proforma.")
+#                 continue
+
+#             try:
+#                 # Convert customer_id to ObjectId before querying the customer collection
+#                 customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+
+#                 if customer is None:
+#                     logging.warning(f"Customer with ID {customer_id} not found for proforma {proforma.get('performa_number')}.")
+#                     continue
+
+#             except Exception as e:
+#                 logging.error(f"Error converting customer_id '{customer_id}' to ObjectId or fetching customer: {e}")
+#                 continue  # Skip this proforma on error
+
+#             # Initialize proforma info
+#             proforma_info = {
+#                 "proforma_id": proforma.get("performa_number", "Unknown"),
+#                 "proforma_tag": proforma.get("preformaTag", "Unknown"),
+#                 "customer_name": customer.get("companyName", "Unknown"),
+#                 "items": []
+#             }
+
+#             # Loop through items in the proforma to fetch product details
+#             for item in proforma.get("items", []):
+#                 # Get the product_id, which corresponds to the product's _id in the product collection
+#                 product_id = item.get("product_id")
+#                 if not product_id:
+#                     logging.warning(f"Item in proforma {proforma.get('performa_number')} is missing 'product_id'. Skipping this item.")
+#                     continue
+
+#                 try:
+#                     # Fetch the product from the adebeo_products collection using the ObjectId
+#                     product = adebeo_products.find_one({"_id": ObjectId(product_id)})
+
+#                     if product is None:
+#                         logging.warning(f"Product with ID {product_id} not found for item in proforma {proforma.get('performa_number')}.")
+#                         continue
+
+#                     # Add product details to the item
+#                     item_info = {
+#                         "description": product.get("ProductDisplay", "No description"),  # Product display name
+#                         "product_name": product.get("productName", "Unknown Product"),
+#                         "product_code": product.get("productCode", "Unknown Code"),
+#                         "company_name": product.get("ProductCompanyName", "Unknown Company"),
+#                         "contact": product.get("Contact", "-"),
+#                         "telephone": product.get("telephone", "-"),
+#                         "address": product.get("address", "No address"),
+#                         "company_gstin": product.get("companyGstin", "No GSTIN"),
+#                         "primary_locality": product.get("primaryLocality", "No locality"),
+#                         "secondary_locality": product.get("secondaryLocality", "No locality"),
+#                         "city": product.get("city", "Unknown City"),
+#                         "state": product.get("state", "Unknown State"),
+#                         "pincode": product.get("pincode", "No Pincode"),
+#                         "email": product.get("email", "No email"),
+#                         "sales_code": product.get("salesCode", "No sales code"),
+#                         "purchase_cost": product.get("purchaseCost", 0),  # purchaseCost field from the product
+#                         "quantity": item.get("quantity", 0),
+#                         "sub_total": item.get("sub_total", 0),
+#                         "unit_price": item.get("unit_price", 0),
+#                         "discount": item.get("discount", 0),
+#                         "dr_status": item.get("dr_status", ""),
+#                         "subscriptionDuration":product.get("subscriptionDuration","1 Year")
+                    
+#                     }
+
+#                     # Append item with full product details to the proforma's items list
+#                     proforma_info["items"].append(item_info)
+
+#                 except Exception as e:
+#                     logging.error(f"Error fetching product with ID '{product_id}' for item in proforma {proforma.get('performa_number')}: {e}")
+#                     continue  # Skip this item if there’s an error fetching the product
+
+#             # Append this proforma's details to the result list
+#             proforma_list.append(proforma_info)
+
+#         # If no proformas were found, log the info
+#         if not proforma_list:
+#             logging.info("No proformas with valid items and products were found.")
+
+#         return jsonify(proforma_list)
+
+#     except Exception as e:
+#         logging.error(f"An error occurred while fetching proformas: {e}")
+#         return jsonify({"error": "Internal Server Error. Please try again later."}), 500
 
 DURATION_TO_DAYS = {
     "1 Month": 30,
