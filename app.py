@@ -2354,12 +2354,10 @@ def extract_proforma_num(proforma_id):
 @app.route("/get_proformas_for_purchase_order", methods=["GET"])
 @login_required
 def get_proformas():
-    # ... [same JWT + role check code] ...
-
     username = request.user
     claims = get_jwt()
     user_role = claims.get("role") 
-    user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
 
     # Ensure the user is an admin
     if user_role != "admin":
