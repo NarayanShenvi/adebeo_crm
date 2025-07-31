@@ -80,6 +80,7 @@ orders_collection =db['adebeo_orders']
 customer_payments_collection = db['adebeo_payments']
 vendor_payments_collection =db['adebeo_vendor_payments']
 company_datas = db['adebeo_company_datas']
+adebeo_categories_collection =db['adebeo_product_categories']
 
 adebeo_customer_collection.create_index([("companyName", "text")])
 
@@ -718,6 +719,53 @@ def getAll_adebeo_products():
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
+#add product categoy
+@app.route("/addcategory", methods=["POST"])
+@login_required
+@jwt_required()
+def add_category():
+    auth_header = request.headers.get("Authorization")
+    pcode = request.json.get("productCode")
+    username = request.user
+
+    claims = get_jwt()
+    user_role = claims.get("role") 
+    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+    # Ensure the user is an admin
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    data = request.json
+
+    # Extract and validate required fields
+    category_name = data.get("Category_Name", "").strip()
+    category_code = data.get("Category_Code", "").strip()
+    category_description = data.get("Category_description", "").strip()
+    is_enabled = data.get("isEnabled", True)  # Default to True if not provided
+
+    if not category_name or not category_code:
+        return jsonify({"error": "Category_Name and Category_Code are required"}), 400
+
+    # Check for existing category by name or code (assuming code should be unique too)
+    if adebeo_categories_collection.find_one({
+        "$or": [
+            {"Category_Name": category_name},
+            {"Category_Code": category_code}
+        ]
+    }):
+        return jsonify({"error": "Category with this name or code already exists"}), 400
+
+    category = {
+        "Category_Name": category_name,
+        "Category_Code": category_code,
+        "Category_description": category_description,
+        "isEnabled": bool(is_enabled)
+    }
+
+    adebeo_categories_collection.insert_one(category)
+
+    return jsonify({"message": "Category added successfully"}), 201
 
 #add new adebeo_products, check for unique product code
 @app.route("/create_adebeo_products", methods=["POST"])
