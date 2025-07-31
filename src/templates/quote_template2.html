@@ -1,114 +1,338 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <title>Quote Proposal</title>
     <style>
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            line-height: 1.6;
+            font-family: "Shippori Mincho B1", "Times New Roman", serif;
+            margin: 0;
+            padding-top: 30px;
+            background-color: white;
+            padding-bottom: 80px; /* Make space for the footer */
         }
+        @page {
+			margin-top: 36px; 
+			margin-bottom: 36px;
+			margin-left: 36px;
+			margin-right: 36px;/* Removes default page margins */
+		}
         header {
+            color: #000000;
+            padding: 15px;
+            background-color: #ebe8e8; /* Dark background for contrast */
+            display: flex;
+            justify-content: space-between;
+            margin-top: -60px;
+        }
+
+        header img {
+            height: 60px;
+            width: 58px;
+        }
+
+        header h1 {
+            color: #000000d7;
+            font-size: 20px;
+            font-weight: bold;
+            word-spacing: 6px;
+        }
+
+        .flex-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+        }
+
+        .left, .right {
+            width: 45%;
+            margin-top: 17px;
+        }
+
+        h2, h3 {
+            color: #161616;
+            font-size: 16px;
+            font-weight: bold;
+            font-family: "Shippori Mincho B1", "Times New Roman", serif;
+        }
+
+        .right h2 {
+            color: #161616;
+            font-size: 16px;
+            font-weight: bold;
+            font-family: "Shippori Mincho B1", "Times New Roman", serif;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 5px 0;
+        }
+
+        .details-grid-quote, .details-grid-customer {
+            display: grid;
+            column-gap: 20px;
+        }
+
+        .details-grid-quote p, .details-grid-customer p {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            margin-bottom: 20px;
+            font-size: 13px;
+            color: #555;
+            white-space: pre-line;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%;
         }
-        header img {
-            height: 80px;
+
+        .details-grid-quote strong, .details-grid-customer strong {
+            min-width: 100px;
+            font-size: 15px;
+            display: inline-block;
+            color: rgb(48, 48, 48);
         }
-        header h1 {
-            font-size: 26px;
-            color: #333;
+
+        .details-grid-customer p {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
         }
+
+        .details-grid-customer p strong {
+            min-width: 80px;
+            text-align: left;
+            flex-shrink: 0;
+        }
+
+        .details-grid-customer p span {
+            flex: 1;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-line;
+        }
+		 .details-grid-customer {
+			word-wrap: break-word;
+			overflow-wrap: break-word;
+			white-space: normal;
+			max-width: 100%; /* Prevents it from expanding outside */
+		}
+        .details-grid {
+            margin-top: -17px;
+            display: grid;
+            column-gap: 20px;
+        }
+
+        .details-grid p {
+            display: flex;
+            align-items: center;
+            font-size: 16px;
+            color: #555;
+            word-wrap: break-word;
+            white-space: normal;
+            overflow-wrap: break-word;
+        }
+
+        .details-grid strong {
+            min-width: 100px;
+            font-size: 15px;
+            display: inline-block;
+            color: rgb(48, 48, 48);
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            table-layout: fixed;
+            overflow: hidden;
+            max-height: 300px;
+            font-family: "Shippori Mincho B1", "Times New Roman", serif;
+            margin-top: 10px;
         }
+
         th, td {
-            border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
+            border: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
+
         th {
-            background-color: #f4f4f4;
+            background-color: #b4b4b4;
+            color: #000;
+            font-size: 13px;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid white;
+            word-wrap: break-word;
+            white-space: normal;
+            overflow-wrap: break-word;
+        }
+
+        td {
+            word-wrap: break-word;
+            white-space: normal;
+            overflow-wrap: break-word;
+            padding: 10px;
+            font-size: 13px;
+            color: #242424;
             font-weight: bold;
+            border-bottom: 2px solid rgb(255, 255, 255);
+            background-color: #dad7d777;
         }
-        tbody tr:nth-child(odd) {
-            background-color: #f9f9f9;
-        }
-        tbody tr:nth-child(even) {
-            background-color: #ffffff;
-        }
+
+        table th:nth-child(1),
+        table td:nth-child(1) { width: 3%; }
+
+        table th:nth-child(2),
+        table td:nth-child(2) { width: 30%; }
+
+        table th:nth-child(3),
+        table td:nth-child(3) { width: 5%; }
+
+        table th:nth-child(4),
+        table td:nth-child(4) { width: 12%; }
+
+        table th:nth-child(5),
+        table td:nth-child(5) { width: 8%; }
+
+        table th:nth-child(6),
+        table td:nth-child(6) { width: 12%; }
+
+        table th:nth-child(7),
+        table td:nth-child(7) { width: 12%; }
+
         .terms {
-            margin-top: 30px;
-            font-size: 0.9em;
+            font-size: 14px;
             color: #555;
+            margin-top: 45px;
         }
+        .terms h3{
+            color: #161616; 
+            font-size: 16px;
+            font-weight: bold;
+            font-family:"Shippori Mincho B1", "Times New Roman", serif;
+             margin-bottom: 14px;
+        }
+		.terms p {
+        white-space: pre-line; /* This will respect the newlines */
+        word-wrap: break-word; /* Ensure no word overflow */
+        overflow-wrap: break-word; /* To make sure long words break properly */
+		}
+
+        footer {
+            background-color: #ebe8e8;
+            color: #242323;
+            text-align: center;
+            padding: 2px 5px;
+            font-size: 14px;
+            font-weight: 400;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        footer p {
+            margin: 0;
+            padding: 5px 0;
+            line-height: 1.6;
+            color: #3b3b3a;
+        }
+
+        footer strong {
+            font-weight: bold;
+            color: #333331;
+        }
+		.address-indent {
+        display: block;
+        margin-top: 0.5em; /* Adjust the space between the label and the address */
+        padding-left: 1ch;  /* 3 characters width indentation */
+    }
     </style>
 </head>
 <body>
-    <!-- Header Section -->
-    <header>
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Company Logo">
-        <h1>Quote Proposal</h1>
-    </header>
-
-    <!-- Quote Details -->
-    <p><strong>Quote Number:</strong> {{ quote_number }}</p>
-    <p><strong>Date:</strong> {{ date }}</p>
-
-    <!-- Customer Details -->
-    <div>
-        <h2>Customer Details</h2>
-        <p><strong>Name:</strong> {{ customer_name }}</p>
-        <p><strong>Address:</strong> {{ customer_address }}</p>
-        <p><strong>Email:</strong> {{ customer_email }}</p>
-        <p><strong>Phone:</strong> {{ customer_phone }}</p>
+   <header>
+    <img src="{{ logo_image }}" alt="Company Logo" style="width: 190px; height:64px;">
+    <div style="text-align: center;">
+        <h1 style="margin-bottom: 5px;">QUOTE PROPOSAL</h1>
+        <h5 style="margin-top: 0px;">CIN#U72200KA2015PTC080050</h5> <!-- CIN placed directly below -->
     </div>
- <!-- about Company -->
-	  <div class="section">
-	  <h2>About Adebeo</h2>
-	  <p>{{ company_description }}</p>	
-	  </div>
-    <!-- Product Details -->
-    <div>
-        <h2>Product Details</h2>
+</header>
+
+    <div class="flex-container">
+        <div class="left">
+            <div class="details-grid-quote">
+                <p><strong>Quote Number:</strong> {{ quote_number }}</p>
+                <p><strong>Date:</strong> {{ date }}</p>
+            </div>
+        </div>
+
+        <div class="right">
+            <h2><i class="fa fa-user-circle" aria-hidden="true"></i> Customer Details</h2>
+            <div class="details-grid-customer">
+                <p><strong>Name:</strong> {{ customer_name }}</p>
+                <p><strong>Address:</strong><span class="address-indent">{{ customer_address }}</span></p>
+                <p><strong>Email:</strong> {{ customer_email }}</p>
+                <p><strong>Phone:</strong> {{ customer_phone }}</p>
+            </div>
+        </div>
+    </div>
+
+    <h2><i class="fa fa-info-circle" aria-hidden="true"></i> About Adebeo</h2>
+    <div class="details-grid">
+        <p>{{ company_description }}</p>
+    </div>
+
+    <h2><i class="fa fa-th" aria-hidden="true"></i> Product Details</h2>
+    <div class="details-grid">
+        <p>{{ product_description }}</p>
         <table>
             <thead>
                 <tr>
                     <th>Sl. No.</th>
                     <th>Product Description</th>
-                    <th>Quantity</th>
+                    <th>Qty</th>
                     <th>Unit Price (₹)</th>
+                    <th>Discount (₹)</th>
                     <th>Total Price (₹)</th>
+                    <th>Tax 18% (₹)</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in products %}
                 <tr>
-                    <td>{{ item.sl_no }}</td>
+                    <td>{{ loop.index }}</td>
                     <td>{{ item.description }}</td>
                     <td>{{ item.quantity }}</td>
-                    <td>{{ item.unit_price }}</td>
-                    <td>{{ item.sub_total }}</td>
+                    <td>₹{{ item.unit_price }}</td>
+                    <td>₹{{ item.discount }}</td>
+                    <td>₹{{ item.sub_total }}</td>
+                    <td>₹{{ (item.sub_total * 0.18) | round(2) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="5"><strong>Grand Total:</strong></td>
+                    <td colspan="2" style="text-align: center;"><strong>₹{{ gross_total }}</strong></td>
+                </tr>
+            </tfoot>
         </table>
     </div>
 
-<!-- Terms and Conditions -->
-<div class="terms">
-    <h3>Terms and Conditions</h3>
-    {% if terms %}
-        {% for line in terms %}
-            <p>{{ line }}</p>
-        {% endfor %}
-    {% else %}
-        <p>No terms available.</p>
-    {% endif %}
-</div>
+    <div class="terms">
+        <h3><i class="fa fa-clipboard-list"></i> Terms and Conditions</h3>
+        <p>{{ terms }}</p>
+    </div>
+
+    <footer>
+        <p>{{ company_name }} / {{ company_address }} / {{ company_contact }} / {{ company_email }}</p>
+    </footer>
 </body>
 </html>
