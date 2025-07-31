@@ -4152,5 +4152,8 @@ def current_adebeo_users():
 
 
 
+#if __name__ == "__main__":
+#    app.run(debug=True)
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))  # fallback for local dev
+    app.run(debug=True, host="0.0.0.0", port=port)
