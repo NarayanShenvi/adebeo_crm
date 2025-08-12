@@ -694,30 +694,75 @@ def get_adebeo_customer():
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
-@app.route("/getall_adebeo_products", methods=["GET"]) #maintain lowercase at the route levels
-# @cross_origin(origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
+# route to get all products
+@app.route("/getall_adebeo_products", methods=["GET"])
 @login_required
 def getAll_adebeo_products():
-    # if request.method == "OPTIONS":
-    #     print("Received OPTIONS request for /getAll_adebeo_products")
-    #     # Handle OPTIONS request (preflight request)
-    #     response = app.make_response(('', 200))  # Status 200 OK
-    #     response.headers['Access-Control-Allow-Origin'] = "http://localhost:3000"
-    #     response.headers['Access-Control-Allow-Headers'] = "Authorization, Content-Type, X-Requested-With"
-    #     response.headers['Access-Control-Allow-Methods'] = "GET, OPTIONS"
-    #     response.headers['Allow'] = "HEAD, OPTIONS, GET"  # This line is important
-    #     return response
-
-    # GET request logic (for product fetching)
     try:
-        username = request.user
-        products_cursor = db['adebeo_products'].find()
-        valid_products = [product for product in products_cursor if product.get("prodisEnabled")]
-        valid_products = convert_objectid_to_str(valid_products)
-        return jsonify({"data": valid_products, "total": len(valid_products)})
+        # Fetch all enabled products
+        products_cursor = db['adebeo_products'].find({"prodisEnabled": True})
+        products = list(products_cursor)
+        products = convert_objectid_to_str(products)
+
+        # Fetch all enabled categories
+        categories = list(db['adebeo_product_categories'].find({"isEnabled": True}))
+        category_map = {c["Category_Code"]: c for c in categories}
+
+        for product in products:
+            # Attach category info with fallback to "default"
+            cat_code = product.get("categoryCode", "default")
+            category = category_map.get(cat_code)
+
+            if not category:
+                category = {
+                    "Category_Name": "Unknown",
+                    "Category_Code": "unknown",
+                    "Category_description": "No matching category found"
+                }
+
+            product["category_info"] = {
+                "Category_Name": category["Category_Name"],
+                "Category_Code": category["Category_Code"],
+                "Category_description": category["Category_description"]
+            }
+
+            # Provide defaults for new fields if missing
+            product["type"] = product.get("type", "product")  # default type
+            product["isUSD"] = product.get("isUSD", False)
+            product["priceUSD"] = product.get("priceUSD", None)
+            product["priceINR"] = product.get("priceINR", None)
+
+        return jsonify({"data": products, "total": len(products)})
+
     except Exception as e:
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
+
+# @app.route("/getall_adebeo_products", methods=["GET"]) #maintain lowercase at the route levels
+# # @cross_origin(origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
+# @login_required
+# def getAll_adebeo_products():
+#     # if request.method == "OPTIONS":
+#     #     print("Received OPTIONS request for /getAll_adebeo_products")
+#     #     # Handle OPTIONS request (preflight request)
+#     #     response = app.make_response(('', 200))  # Status 200 OK
+#     #     response.headers['Access-Control-Allow-Origin'] = "http://localhost:3000"
+#     #     response.headers['Access-Control-Allow-Headers'] = "Authorization, Content-Type, X-Requested-With"
+#     #     response.headers['Access-Control-Allow-Methods'] = "GET, OPTIONS"
+#     #     response.headers['Allow'] = "HEAD, OPTIONS, GET"  # This line is important
+#     #     return response
+
+#     # GET request logic (for product fetching)
+#     try:
+#         username = request.user
+#         products_cursor = db['adebeo_products'].find()
+#         valid_products = [product for product in products_cursor if product.get("prodisEnabled")]
+#         valid_products = convert_objectid_to_str(valid_products)
+#         return jsonify({"data": valid_products, "total": len(valid_products)})
+#     except Exception as e:
+#         print(f"Error occurred: {str(e)}")
+#         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
 #add product categoy
 @app.route("/addcategory", methods=["POST"])
@@ -767,18 +812,44 @@ def add_category():
 
     return jsonify({"message": "Category added successfully"}), 201
 
+#get product categories, check for unique product code
+@app.route("/getAllCategories", methods=["GET"])
+@login_required
+@jwt_required()
+def list_categories():
+    claims = get_jwt()
+    user_role = claims.get("role")
+
+    # For listing categories, you might want to allow all logged-in users or restrict by role
+    # Adjust the role check accordingly, here I allow any logged-in user:
+    # if user_role not in ["admin", "user"]:
+    #     return jsonify({"error": "Access denied."}), 403
+
+    search_name = request.args.get("name", "").strip()
+
+    query = {"isEnabled": True}  # only enabled categories by default
+
+    if search_name:
+        # Case-insensitive search for editing
+        query["Category_Name"] = {"$regex": search_name, "$options": "i"}
+
+    categories = list(adebeo_categories_collection.find(query, {"_id": 0}))
+
+    return jsonify(categories), 200
+
+
 #add new adebeo_products, check for unique product code
 @app.route("/create_adebeo_products", methods=["POST"])
 @login_required
 @jwt_required()
 def create_adebeo_products():
     auth_header = request.headers.get("Authorization")
-    pcode = request.json.get("productCode")
+    data = request.json
+    pcode = data.get("productCode")
     username = request.user
 
     claims = get_jwt()
-    user_role = claims.get("role") 
-    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+    user_role = claims.get("role")
 
     # Ensure the user is an admin
     if user_role != "admin":
@@ -787,40 +858,125 @@ def create_adebeo_products():
     if not pcode:
         return jsonify({"error": "ProductCode is required"}), 400
 
+    # Check for existing productCode (case insensitive)
     existing_product = adebeo_products.find_one({"productCode": {"$regex": f"^{pcode}$", "$options": "i"}})
-
     if existing_product:
         return jsonify({"exists": True, "message": "ProductCode already exists!"}), 409
-    else:
-         # Insert the new product
-        new_product = {
-          	"productName":  request.json.get("productName"), 
-	        "productCode": request.json.get("productCode"),
-	        "ProductDisplay": request.json.get("ProductDisplay"),
-	        "ProductCompanyName":request.json.get("ProductCompanyName"),
-	        "Contact": request.json.get("Contact"),
-	        "address": request.json.get("address"),
-	        "companyGstin": request.json.get("companyGstin"),
-	        "primaryLocality": request.json.get("primaryLocality"),
-	        "secondaryLocality": request.json.get("secondaryLocality"),
-	        "city":request.json.get("city"),
-	        "state":request.json.get("state"),
-	        "pincode":request.json.get("pincode"),
-	        "email":request.json.get("email"),
-	        "salesCode":request.json.get("salesCode"),
-	        "purchaseCost":request.json.get("purchaseCost"),
-	        "salesCost":request.json.get("salesCost"),
-	        "maxDiscount":request.json.get("maxDiscount"),
-	        "prodisEnabled":request.json.get("prodisEnabled"),
-	        "insertBy": username,
-	        "insertDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
-            "subscriptionDuration":request.json.get("subscriptionDuration")
-	     #   "modifiedBy":request.json.get("productName")
-	     #   "modifiedDate":request.json.get("productName")
-        }
 
-        result = adebeo_products.insert_one(new_product)
-        return jsonify(id=str(result.inserted_id), message="New Product added successfully.")
+    # Validate new fields
+    product_type = data.get("type")
+    category_code = data.get("categoryCode")
+    is_usd = data.get("isUSD", False)
+    price_usd = data.get("priceUSD")
+    price_inr = data.get("priceINR")
+
+    # Basic validations
+    if product_type not in ["product", "service"]:
+        return jsonify({"error": "Invalid 'type'. Must be 'product' or 'service'"}), 400
+
+    if not category_code:
+        return jsonify({"error": "'categoryCode' is required"}), 400
+
+    # Verify category exists and is enabled
+    category = adebeo_categories_collection.find_one({"Category_Code": category_code, "isEnabled": True})
+    if not category:
+        return jsonify({"error": "Invalid 'categoryCode'. Category does not exist or is disabled."}), 400
+
+    if is_usd:
+        if price_usd is None:
+            return jsonify({"error": "'priceUSD' is required when 'isUSD' is true"}), 400
+        if price_inr is None:
+            return jsonify({"error": "'priceINR' (INR equivalent) is required"}), 400
+
+    # Prepare new product document
+    new_product = {
+        "productName": data.get("productName"),
+        "productCode": pcode,
+        "ProductDisplay": data.get("ProductDisplay"),
+        "ProductCompanyName": data.get("ProductCompanyName"),
+        "Contact": data.get("Contact"),
+        "address": data.get("address"),
+        "companyGstin": data.get("companyGstin"),
+        "primaryLocality": data.get("primaryLocality"),
+        "secondaryLocality": data.get("secondaryLocality"),
+        "city": data.get("city"),
+        "state": data.get("state"),
+        "pincode": data.get("pincode"),
+        "email": data.get("email"),
+        "salesCode": data.get("salesCode"),
+        "purchaseCost": data.get("purchaseCost"),
+        "salesCost": data.get("salesCost"),
+        "maxDiscount": data.get("maxDiscount"),
+        "prodisEnabled": data.get("prodisEnabled", True),
+        "insertBy": username,
+        "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),
+        "subscriptionDuration": data.get("subscriptionDuration"),
+
+        # New fields:
+        "type": product_type,
+        "categoryCode": category_code,
+        "isUSD": bool(is_usd),
+        "priceUSD": float(price_usd) if price_usd is not None else None,
+        "priceINR": float(price_inr) if price_inr is not None else None,
+    }
+
+    result = adebeo_products.insert_one(new_product)
+
+    return jsonify(id=str(result.inserted_id), message="New Product added successfully.")
+    
+# @app.route("/create_adebeo_products", methods=["POST"])
+# @login_required
+# @jwt_required()
+# def create_adebeo_products():
+#     auth_header = request.headers.get("Authorization")
+#     pcode = request.json.get("productCode")
+#     username = request.user
+
+#     claims = get_jwt()
+#     user_role = claims.get("role") 
+#     #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+
+#     # Ensure the user is an admin
+#     if user_role != "admin":
+#         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#     if not pcode:
+#         return jsonify({"error": "ProductCode is required"}), 400
+
+#     existing_product = adebeo_products.find_one({"productCode": {"$regex": f"^{pcode}$", "$options": "i"}})
+
+#     if existing_product:
+#         return jsonify({"exists": True, "message": "ProductCode already exists!"}), 409
+#     else:
+#          # Insert the new product
+#         new_product = {
+#           	"productName":  request.json.get("productName"), 
+# 	        "productCode": request.json.get("productCode"),
+# 	        "ProductDisplay": request.json.get("ProductDisplay"),
+# 	        "ProductCompanyName":request.json.get("ProductCompanyName"),
+# 	        "Contact": request.json.get("Contact"),
+# 	        "address": request.json.get("address"),
+# 	        "companyGstin": request.json.get("companyGstin"),
+# 	        "primaryLocality": request.json.get("primaryLocality"),
+# 	        "secondaryLocality": request.json.get("secondaryLocality"),
+# 	        "city":request.json.get("city"),
+# 	        "state":request.json.get("state"),
+# 	        "pincode":request.json.get("pincode"),
+# 	        "email":request.json.get("email"),
+# 	        "salesCode":request.json.get("salesCode"),
+# 	        "purchaseCost":request.json.get("purchaseCost"),
+# 	        "salesCost":request.json.get("salesCost"),
+# 	        "maxDiscount":request.json.get("maxDiscount"),
+# 	        "prodisEnabled":request.json.get("prodisEnabled"),
+# 	        "insertBy": username,
+# 	        "insertDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
+#             "subscriptionDuration":request.json.get("subscriptionDuration")
+# 	     #   "modifiedBy":request.json.get("productName")
+# 	     #   "modifiedDate":request.json.get("productName")
+#         }
+
+#         result = adebeo_products.insert_one(new_product)
+#         return jsonify(id=str(result.inserted_id), message="New Product added successfully.")
 
 #load existing products to editor
 @app.route("/load_edit_adebeo_products", methods=["GET"])
