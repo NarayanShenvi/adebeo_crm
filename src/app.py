@@ -81,6 +81,7 @@ customer_payments_collection = db['adebeo_payments']
 vendor_payments_collection =db['adebeo_vendor_payments']
 company_datas = db['adebeo_company_datas']
 adebeo_categories_collection =db['adebeo_product_categories']
+adebeo_combo_products =db["adebeo_combo_products"]
 
 adebeo_customer_collection.create_index([("companyName", "text")])
 
@@ -694,6 +695,193 @@ def get_adebeo_customer():
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
+# route to add Combo products
+@app.route("/addComboProduct", methods=["POST"])
+@login_required
+@jwt_required()
+def add_combo_product():
+    try:
+        username = request.user
+        claims = get_jwt()
+
+        if claims.get("role") != "admin":
+            return jsonify({"error": "Only admins can create combo products"}), 403
+
+        data = request.get_json()
+
+        def safe_strip(value):
+            return value.strip() if isinstance(value, str) else value
+
+        combo_code = safe_strip(data.get("comboCode", ""))
+        combo_name = safe_strip(data.get("comboDisplayName", ""))
+        sales_code = safe_strip(data.get("salesCode", ""))
+
+        sales_cost = data.get("salesCost")
+        max_discount = data.get("maxDiscount")
+        products = data.get("products", [])
+
+        # Basic validation for required fields
+        if not combo_code or not combo_name or not sales_code or sales_cost is None or not products:
+            return jsonify({"error": "Required fields are missing"}), 400
+
+        # Validate sales_cost and max_discount as numbers (float or int)
+        try:
+            sales_cost = float(sales_cost)
+        except (ValueError, TypeError):
+            return jsonify({"error": "salesCost must be a number"}), 400
+
+        if max_discount is not None:
+            try:
+                max_discount = float(max_discount)
+            except (ValueError, TypeError):
+                return jsonify({"error": "maxDiscount must be a number"}), 400
+        else:
+            max_discount = 0.0  # or any default you prefer
+
+        # Ensure comboCode is unique
+        if db.adebeo_combo_products.find_one({"comboCode": combo_code}):
+            return jsonify({"error": "ComboCode already exists"}), 409
+
+        # Validate and enrich products
+        final_products = []
+        for item in products:
+            product_id = item.get("productId")
+            quantity = item.get("quantity", 1)
+
+            if not product_id:
+                return jsonify({"error": "Each product must have a productId"}), 400
+
+            product_doc = db.adebeo_products.find_one({"_id": ObjectId(product_id)})
+            if not product_doc:
+                return jsonify({"error": f"Product not found: {product_id}"}), 400
+
+            final_products.append({
+                "productId": str(product_doc["_id"]),
+                "productName": product_doc.get("productName"),
+                "productCode": product_doc.get("productCode"),
+                "quantity": quantity
+            })
+
+        combo_product = {
+            "comboCode": combo_code,
+            "comboDisplayName": combo_name,
+            "salesCode": sales_code,
+            "salesCost": sales_cost,
+            "maxDiscount": max_discount,
+            "products": final_products,
+            "createdBy": username,
+            "createdAt": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),
+            "modifiedBy": None,
+            "modifiedAt": None
+        }
+
+        db.adebeo_combo_products.insert_one(combo_product)
+
+        return jsonify({"message": "Combo product created successfully"}), 201
+
+    except Exception as e:
+        print("Error adding combo product:", str(e))
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+# route to get all Combo products and also with search string
+@app.route("/getComboProducts", methods=["GET"])
+@login_required
+@jwt_required()
+def get_combo_products():
+    try:
+        search_name = request.args.get("name", "").strip()
+
+        query = {}
+        if search_name:
+            query["comboDisplayName"] = {
+                "$regex": search_name,
+                "$options": "i"  # Case-insensitive
+            }
+
+        combos_cursor = db.adebeo_combo_products.find(query)
+        combos = []
+
+        for combo in combos_cursor:
+            combo["_id"] = str(combo["_id"])
+            for product in combo.get("products", []):
+                product["productId"] = str(product["productId"])
+            combos.append(combo)
+
+        return jsonify({"data": combos, "total": len(combos)})
+
+    except Exception as e:
+        print(f"Error fetching combo products: {str(e)}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+# route ro update combo product
+@app.route("/updateComboProduct/<combo_code>", methods=["PUT"])
+@login_required
+@jwt_required()
+def update_combo_product(combo_code):
+    try:
+        username = request.user
+        claims = get_jwt()
+
+        if claims.get("role") != "admin":
+            return jsonify({"error": "Only admins can update combo products"}), 403
+
+        data = request.get_json()
+
+        # Validate input fields
+        combo_name = data.get("comboDisplayName", "").strip()
+        sales_code = data.get("salesCode", "").strip()
+        sales_cost = data.get("salesCost", "").strip()
+        max_discount = data.get("maxDiscount", "").strip()
+        products = data.get("products", [])
+
+        if not combo_name or not sales_code or not sales_cost or not products:
+            return jsonify({"error": "Missing required fields"}), 400
+
+        # Validate and enrich products
+        final_products = []
+        for item in products:
+            product_id = item.get("productId")
+            quantity = item.get("quantity", 1)
+
+            if not product_id:
+                return jsonify({"error": "Each product must have a productId"}), 400
+
+            product_doc = db.adebeo_products.find_one({"_id": ObjectId(product_id)})
+            if not product_doc:
+                return jsonify({"error": f"Product not found: {product_id}"}), 400
+
+            final_products.append({
+                "productId": str(product_doc["_id"]),
+                "productName": product_doc.get("productName"),
+                "productCode": product_doc.get("productCode"),
+                "quantity": quantity
+            })
+
+        # Build update object
+        update_fields = {
+            "comboDisplayName": combo_name,
+            "salesCode": sales_code,
+            "salesCost": sales_cost,
+            "maxDiscount": max_discount,
+            "products": final_products,
+            "modifiedBy": username,
+            "modifiedAt": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        result = db.combo_products.update_one(
+            {"comboCode": combo_code},
+            {"$set": update_fields}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({"error": "Combo product not found"}), 404
+
+        return jsonify({"message": "Combo product updated successfully"}), 200
+
+    except Exception as e:
+        print(f"Error updating combo product: {str(e)}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
 # route to get all products
 @app.route("/getall_adebeo_products", methods=["GET"])
 @login_required
@@ -738,6 +926,57 @@ def getAll_adebeo_products():
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
+#update Category
+@app.route("/updatecategory/<category_code>", methods=["PUT"])
+@login_required
+@jwt_required()
+def update_category(category_code):
+    try:
+        claims = get_jwt()
+        user_role = claims.get("role")
+
+        if user_role != "admin":
+            return jsonify({"error": "Access denied. Admin privileges required."}), 403
+
+        data = request.json
+        update_fields = {}
+
+        # Allow only specific fields to be updated
+        if "Category_Name" in data:
+            update_fields["Category_Name"] = data["Category_Name"].strip()
+
+        if "Category_Code" in data:
+            update_fields["Category_Code"] = data["Category_Code"].strip()
+
+        if "Category_description" in data:
+            update_fields["Category_description"] = data["Category_description"].strip()
+
+        if "isEnabled" in data:
+            update_fields["isEnabled"] = bool(data["isEnabled"])
+
+        if not update_fields:
+            return jsonify({"error": "No valid fields provided for update."}), 400
+
+        # Find the existing category
+        category = adebeo_categories_collection.find_one({"Category_Code": category_code})
+        if not category:
+            return jsonify({"error": "Category not found."}), 404
+
+        # If updating to a new code, check for uniqueness
+        if "Category_Code" in update_fields and update_fields["Category_Code"] != category_code:
+            if adebeo_categories_collection.find_one({"Category_Code": update_fields["Category_Code"]}):
+                return jsonify({"error": "Another category with this code already exists."}), 409
+
+        adebeo_categories_collection.update_one(
+            {"Category_Code": category_code},
+            {"$set": update_fields}
+        )
+
+        return jsonify({"message": "Category updated successfully."})
+
+    except Exception as e:
+        print("Error updating category:", str(e))
+        return jsonify({"error": "An error occurred", "details": str(e)}), 500
 
 # @app.route("/getall_adebeo_products", methods=["GET"]) #maintain lowercase at the route levels
 # # @cross_origin(origins="http://localhost:3000", allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
@@ -923,7 +1162,7 @@ def create_adebeo_products():
     result = adebeo_products.insert_one(new_product)
 
     return jsonify(id=str(result.inserted_id), message="New Product added successfully.")
-    
+
 # @app.route("/create_adebeo_products", methods=["POST"])
 # @login_required
 # @jwt_required()
@@ -984,37 +1223,92 @@ def create_adebeo_products():
 @jwt_required()
 def load_edit_adebeo_products():
     try:
-        # Get the user's role from JWT
         claims = get_jwt()
         user_role = claims.get("role")
-        
-        # Ensure the user is an admin
+
         if user_role != "admin":
-            return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+            return jsonify({"error": "Access denied. Admin privileges required."}), 403
 
-        # Get product name from query params for partial-text search
-        product_name = request.args.get('productName', None)
+        product_name = request.args.get('productName', '').strip()
 
-        # Build the query dynamically based on the search
+        # Get enabled categories
+        enabled_categories_cursor = adebeo_categories_collection.find({"isEnabled": True})
+        enabled_categories = {cat["Category_Code"]: cat for cat in enabled_categories_cursor}
+
+        # product_query = {
+        #     "Category_Code": {"$in": list(enabled_categories.keys())}
+        # }
         product_query = {}
         if product_name:
-            # Add case-insensitive partial-text search for productName
             product_query["productName"] = {"$regex": f".*{re.escape(product_name)}.*", "$options": "i"}
 
-        # Fetch matching product data from the database
         product_data_cursor = db['adebeo_products'].find(product_query)
         product_data = list(product_data_cursor)
 
         if not product_data:
-            return jsonify({"message": "No matching products found"}), 404
+            return jsonify({"message": "No matching products found."}), 404
 
-        # Convert ObjectId fields to strings for JSON serialization
+        # Attach category_info inside each product
+        for product in product_data:
+            cat_code = product.get("Category_Code")
+            category = enabled_categories.get(cat_code)
+            if category:
+                product["category_info"] = {
+                    "Category_Code": category.get("Category_Code", "default"),
+                    "Category_Name": category.get("Category_Name", "default"),
+                    "Category_description": category.get("Category_description", "default"),
+                }
+            else:
+                # Fallback if category not found
+                product["category_info"] = {
+                    "Category_Code": "default",
+                    "Category_Name": "default",
+                    "Category_description": "default",
+                }
+
         return jsonify({"data": convert_objectid_to_str(product_data)})
 
     except Exception as e:
-        # Log the error
         print(f"Error occurred: {str(e)}")
-        return jsonify({"message": "An error occurred", "error": str(e)}), 500
+        return jsonify({"error": "An error occurred while loading products.", "details": str(e)}), 500
+
+
+# @app.route("/load_edit_adebeo_products", methods=["GET"])
+# @login_required
+# @jwt_required()
+# def load_edit_adebeo_products():
+#     try:
+#         # Get the user's role from JWT
+#         claims = get_jwt()
+#         user_role = claims.get("role")
+        
+#         # Ensure the user is an admin
+#         if user_role != "admin":
+#             return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#         # Get product name from query params for partial-text search
+#         product_name = request.args.get('productName', None)
+
+#         # Build the query dynamically based on the search
+#         product_query = {}
+#         if product_name:
+#             # Add case-insensitive partial-text search for productName
+#             product_query["productName"] = {"$regex": f".*{re.escape(product_name)}.*", "$options": "i"}
+
+#         # Fetch matching product data from the database
+#         product_data_cursor = db['adebeo_products'].find(product_query)
+#         product_data = list(product_data_cursor)
+
+#         if not product_data:
+#             return jsonify({"message": "No matching products found"}), 404
+
+#         # Convert ObjectId fields to strings for JSON serialization
+#         return jsonify({"data": convert_objectid_to_str(product_data)})
+
+#     except Exception as e:
+#         # Log the error
+#         print(f"Error occurred: {str(e)}")
+#         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
 #update product_update after edit
 @app.route("/update_adebeo_product/<id>", methods=["PUT"])
