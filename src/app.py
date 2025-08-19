@@ -868,7 +868,7 @@ def update_combo_product(combo_code):
             "modifiedAt": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
         }
 
-        result = db.combo_products.update_one(
+        result = db.adebeo_combo_products.update_one(
             {"comboCode": combo_code},
             {"$set": update_fields}
         )
@@ -1034,7 +1034,7 @@ def add_category():
     # Check for existing category by name or code (assuming code should be unique too)
     if adebeo_categories_collection.find_one({
         "$or": [
-            {"Category_Name": category_name},
+         #   {"Category_Name": category_name},
             {"Category_Code": category_code}
         ]
     }):
