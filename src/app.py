@@ -1360,7 +1360,12 @@ def update_adebeo_product(id: str):
 	    #   "insertDate":datetime.utcnow()
 	        "modifiedBy":username,
 	        "modifiedDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
-            "subscriptionDuration":request.json.get("subscriptionDuration")
+            "subscriptionDuration":request.json.get("subscriptionDuration"),
+        #   new fields added
+            "type":request.json.get("type"),
+            "isUSD":request.json.get("isUSD"),
+            "priceUSD":request.json.get("priceUSD"),
+            "priceINR":request.json.get("priceINR")
         }
 
         # Remove fields that are None
