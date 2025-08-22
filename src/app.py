@@ -2853,37 +2853,95 @@ def extract_proforma_num(proforma_id):
         return int(proforma_id[idx+1:])
     except Exception:
         return 0
+## route to update the status of performa_id
+@app.route("/update_proforma_enabled/<proforma_id>", methods=["PUT"])
+@login_required
+def update_proforma_enabled(proforma_id):
+    from flask import request
+    claims = get_jwt()
+    user_role = claims.get("role")
+
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    data = request.get_json()
+    is_enabled = data.get("isEnabled")
+
+    if is_enabled not in [True, False]:
+        return jsonify({"error": "Invalid value for isEnabled. Must be true or false."}), 400
+
+    try:
+        result = adebeo_performa_collection.update_one(
+            {"performa_number": proforma_id},
+            {"$set": {"isEnabled": is_enabled}}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({"message": "No proforma found with the given ID."}), 404
+
+        return jsonify({
+            "message": f"Proforma {proforma_id} updated successfully.",
+            "isEnabled": is_enabled
+        })
+
+    except Exception as e:
+        logging.error(f"Error updating isEnabled for {proforma_id}: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+        
 
 @app.route("/get_proformas_for_purchase_order", methods=["GET"])
 @login_required
 def get_proformas():
+    from bson import ObjectId
+    import re
+
     username = request.user
     claims = get_jwt()
-    user_role = claims.get("role") 
-    #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
+    user_role = claims.get("role")
 
-    # Ensure the user is an admin
     if user_role != "admin":
         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
 
+    customer_name_filter = request.args.get("customer_name", None)
+    purchase_status_filter = request.args.get("purchase_status", None)  # "true" / "false"
+
     try:
+        match_conditions = []
+
+        # If purchase_status query param is present, use it
+        if purchase_status_filter is not None:
+            purchase_status_bool = purchase_status_filter.lower() == "true"
+            match_conditions.append({"purchase_status": purchase_status_bool})
+        else:
+            # Default: show only unpurchased
+            match_conditions.append({
+                "$or": [
+                    {"purchase_status": False},
+                    {"purchase_status": {"$exists": False}}
+                ]
+            })
+
+        # Apply isEnabled filter only if purchase_status != false
+        if not (purchase_status_filter and purchase_status_filter.lower() == "false"):
+            match_conditions.append({
+                "$or": [
+                    {"isEnabled": True},
+                    {"isEnabled": {"$exists": False}}
+                ]
+            })
+
+        # Always exclude disabled
+        match_conditions.append({
+            "$or": [
+                {"isDisabled": {"$exists": False}},
+                {"isDisabled": False}
+            ]
+        })
+
         pipeline = [
             {
                 "$match": {
-                    "$and": [
-                        {
-                            "$or": [
-                                {"purchase_status": False},
-                                {"purchase_status": {"$exists": False}}
-                            ]
-                        },
-                        {
-                            "$or": [
-                                {"isDisabled": {"$exists": False}},
-                                {"isDisabled": False}
-                            ]
-                        }
-                    ]
+                    "$and": match_conditions
                 }
             },
             {
@@ -2891,12 +2949,30 @@ def get_proformas():
                     "from": "adebeo_customers",
                     "let": {"cust_id": {"$toObjectId": "$customer_id"}},
                     "pipeline": [
-                        {"$match": {"$expr": {"$eq": ["$_id", "$$cust_id"]}}}
+                        {
+                            "$match": {
+                                "$expr": {"$eq": ["$_id", "$$cust_id"]}
+                            }
+                        }
                     ],
                     "as": "customer"
                 }
             },
             {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": True}},
+        ]
+
+        # Optional: filter by customer_name after lookup
+        if customer_name_filter:
+            pipeline.append({
+                "$match": {
+                    "customer.companyName": {
+                        "$regex": customer_name_filter,
+                        "$options": "i"
+                    }
+                }
+            })
+
+        pipeline.extend([
             {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},
             {
                 "$lookup": {
@@ -2956,14 +3032,21 @@ def get_proformas():
                     "items": 1
                 }
             }
-        ]
+        ])
 
         results = list(adebeo_performa_collection.aggregate(pipeline))
 
-        # Python-side sort descending by numeric suffix after "P"
+        # Extract serial number from something like "AD2025P0486"
+        def extract_proforma_num(proforma_id):
+            try:
+                match = re.search(r'P(\d+)', proforma_id)
+                return int(match.group(1)) if match else 0
+            except:
+                return 0
+
+        # Sort by extracted number in descending order
         results.sort(key=lambda x: extract_proforma_num(x.get("proforma_id", "")), reverse=True)
 
-        # Convert ObjectIds in nested dicts to strings if any
         def convert_ids(obj):
             if isinstance(obj, list):
                 return [convert_ids(i) for i in obj]
@@ -2984,11 +3067,11 @@ def get_proformas():
 
 
 
+
 # @app.route("/get_proformas_for_purchase_order", methods=["GET"])
 # @login_required
 # def get_proformas():
 #     username = request.user
-
 #     claims = get_jwt()
 #     user_role = claims.get("role") 
 #     #user_role = request.role  # Assuming `request.role` holds the user's role from the JWT
@@ -2998,105 +3081,122 @@ def get_proformas():
 #         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
 
 #     try:
-#         # Fetch Proformas where Purchase_status is False or missing
-#         proformas = adebeo_performa_collection.find({
-#             "$or": [{"purchase_status": False}, {"purchase_status": {"$exists": False}}]
-#         })
-
-#         if not proformas:
-#             logging.error("No proformas found in the collection.")
-        
-#         proforma_list = []
-
-#         # Loop through each proforma to get the associated customer name
-#         for proforma in proformas:
-#             customer_id = proforma.get("customer_id")
-#             if not customer_id:
-#                 logging.warning(f"Proforma {proforma.get('performa_number')} is missing 'customer_id'. Skipping this proforma.")
-#                 continue
-
-#             try:
-#                 # Convert customer_id to ObjectId before querying the customer collection
-#                 customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
-
-#                 if customer is None:
-#                     logging.warning(f"Customer with ID {customer_id} not found for proforma {proforma.get('performa_number')}.")
-#                     continue
-
-#             except Exception as e:
-#                 logging.error(f"Error converting customer_id '{customer_id}' to ObjectId or fetching customer: {e}")
-#                 continue  # Skip this proforma on error
-
-#             # Initialize proforma info
-#             proforma_info = {
-#                 "proforma_id": proforma.get("performa_number", "Unknown"),
-#                 "proforma_tag": proforma.get("preformaTag", "Unknown"),
-#                 "customer_name": customer.get("companyName", "Unknown"),
-#                 "items": []
-#             }
-
-#             # Loop through items in the proforma to fetch product details
-#             for item in proforma.get("items", []):
-#                 # Get the product_id, which corresponds to the product's _id in the product collection
-#                 product_id = item.get("product_id")
-#                 if not product_id:
-#                     logging.warning(f"Item in proforma {proforma.get('performa_number')} is missing 'product_id'. Skipping this item.")
-#                     continue
-
-#                 try:
-#                     # Fetch the product from the adebeo_products collection using the ObjectId
-#                     product = adebeo_products.find_one({"_id": ObjectId(product_id)})
-
-#                     if product is None:
-#                         logging.warning(f"Product with ID {product_id} not found for item in proforma {proforma.get('performa_number')}.")
-#                         continue
-
-#                     # Add product details to the item
-#                     item_info = {
-#                         "description": product.get("ProductDisplay", "No description"),  # Product display name
-#                         "product_name": product.get("productName", "Unknown Product"),
-#                         "product_code": product.get("productCode", "Unknown Code"),
-#                         "company_name": product.get("ProductCompanyName", "Unknown Company"),
-#                         "contact": product.get("Contact", "-"),
-#                         "telephone": product.get("telephone", "-"),
-#                         "address": product.get("address", "No address"),
-#                         "company_gstin": product.get("companyGstin", "No GSTIN"),
-#                         "primary_locality": product.get("primaryLocality", "No locality"),
-#                         "secondary_locality": product.get("secondaryLocality", "No locality"),
-#                         "city": product.get("city", "Unknown City"),
-#                         "state": product.get("state", "Unknown State"),
-#                         "pincode": product.get("pincode", "No Pincode"),
-#                         "email": product.get("email", "No email"),
-#                         "sales_code": product.get("salesCode", "No sales code"),
-#                         "purchase_cost": product.get("purchaseCost", 0),  # purchaseCost field from the product
-#                         "quantity": item.get("quantity", 0),
-#                         "sub_total": item.get("sub_total", 0),
-#                         "unit_price": item.get("unit_price", 0),
-#                         "discount": item.get("discount", 0),
-#                         "dr_status": item.get("dr_status", ""),
-#                         "subscriptionDuration":product.get("subscriptionDuration","1 Year")
-                    
+#         pipeline = [
+#             {
+#                 "$match": {
+#                     "$and": [
+#                         {
+#                             "$or": [
+#                                 {"purchase_status": False},
+#                                 {"purchase_status": {"$exists": False}}
+#                             ]
+#                         },
+#                         {
+#                             "$or": [
+#                                 {"isDisabled": {"$exists": False}},
+#                                 {"isDisabled": False}
+#                             ]
+#                         }
+#                     ]
+#                 }
+#             },
+#             {
+#                 "$lookup": {
+#                     "from": "adebeo_customers",
+#                     "let": {"cust_id": {"$toObjectId": "$customer_id"}},
+#                     "pipeline": [
+#                         {"$match": {"$expr": {"$eq": ["$_id", "$$cust_id"]}}}
+#                     ],
+#                     "as": "customer"
+#                 }
+#             },
+#             {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": True}},
+#             {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},
+#             {
+#                 "$lookup": {
+#                     "from": "adebeo_products",
+#                     "let": {"prod_id": {"$toObjectId": "$items.product_id"}},
+#                     "pipeline": [
+#                         {"$match": {"$expr": {"$eq": ["$_id", "$$prod_id"]}}}
+#                     ],
+#                     "as": "product"
+#                 }
+#             },
+#             {"$unwind": {"path": "$product", "preserveNullAndEmptyArrays": True}},
+#             {
+#                 "$addFields": {
+#                     "item_info": {
+#                         "description": {"$ifNull": ["$product.ProductDisplay", "No description"]},
+#                         "product_name": {"$ifNull": ["$product.productName", "Unknown Product"]},
+#                         "product_code": {"$ifNull": ["$product.productCode", "Unknown Code"]},
+#                         "company_name": {"$ifNull": ["$product.ProductCompanyName", "Unknown Company"]},
+#                         "contact": {"$ifNull": ["$product.Contact", "-"]},
+#                         "telephone": {"$ifNull": ["$product.telephone", "-"]},
+#                         "address": {"$ifNull": ["$product.address", "No address"]},
+#                         "company_gstin": {"$ifNull": ["$product.companyGstin", "No GSTIN"]},
+#                         "primary_locality": {"$ifNull": ["$product.primaryLocality", "No locality"]},
+#                         "secondary_locality": {"$ifNull": ["$product.secondaryLocality", "No locality"]},
+#                         "city": {"$ifNull": ["$product.city", "Unknown City"]},
+#                         "state": {"$ifNull": ["$product.state", "Unknown State"]},
+#                         "pincode": {"$ifNull": ["$product.pincode", "No Pincode"]},
+#                         "email": {"$ifNull": ["$product.email", "No email"]},
+#                         "sales_code": {"$ifNull": ["$product.salesCode", "No sales code"]},
+#                         "purchase_cost": {"$ifNull": ["$product.purchaseCost", 0]},
+#                         "quantity": {"$ifNull": ["$items.quantity", 0]},
+#                         "sub_total": {"$ifNull": ["$items.sub_total", 0]},
+#                         "unit_price": {"$ifNull": ["$items.unit_price", 0]},
+#                         "discount": {"$ifNull": ["$items.discount", 0]},
+#                         "dr_status": {"$ifNull": ["$items.dr_status", ""]},
+#                         "subscriptionDuration": {"$ifNull": ["$product.subscriptionDuration", "1 Year"]}
 #                     }
+#                 }
+#             },
+#             {
+#                 "$group": {
+#                     "_id": {
+#                         "number": "$performa_number",
+#                         "tag": "$preformaTag"
+#                     },
+#                     "customer_name": {"$first": {"$ifNull": ["$customer.companyName", "Unknown"]}},
+#                     "items": {"$push": "$item_info"}
+#                 }
+#             },
+#             {
+#                 "$project": {
+#                     "_id": 0,
+#                     "proforma_id": "$_id.number",
+#                     "proforma_tag": "$_id.tag",
+#                     "customer_name": 1,
+#                     "items": 1
+#                 }
+#             }
+#         ]
 
-#                     # Append item with full product details to the proforma's items list
-#                     proforma_info["items"].append(item_info)
+#         results = list(adebeo_performa_collection.aggregate(pipeline))
 
-#                 except Exception as e:
-#                     logging.error(f"Error fetching product with ID '{product_id}' for item in proforma {proforma.get('performa_number')}: {e}")
-#                     continue  # Skip this item if there’s an error fetching the product
+#         # Python-side sort descending by numeric suffix after "P"
+#         results.sort(key=lambda x: extract_proforma_num(x.get("proforma_id", "")), reverse=True)
 
-#             # Append this proforma's details to the result list
-#             proforma_list.append(proforma_info)
+#         # Convert ObjectIds in nested dicts to strings if any
+#         def convert_ids(obj):
+#             if isinstance(obj, list):
+#                 return [convert_ids(i) for i in obj]
+#             elif isinstance(obj, dict):
+#                 return {
+#                     k: str(v) if isinstance(v, ObjectId) else convert_ids(v)
+#                     for k, v in obj.items()
+#                 }
+#             return obj
 
-#         # If no proformas were found, log the info
-#         if not proforma_list:
-#             logging.info("No proformas with valid items and products were found.")
+#         results = convert_ids(results)
 
-#         return jsonify(proforma_list)
+#         return jsonify(results)
 
 #     except Exception as e:
-#         logging.error(f"An error occurred while fetching proformas: {e}")
-#         return jsonify({"error": "Internal Server Error. Please try again later."}), 500
+#         logging.error(f"Error in get_proformas: {e}")
+#         return jsonify({"error": "Internal Server Error"}), 500
+
+
 
 DURATION_TO_DAYS = {
     "1 Month": 30,
@@ -3647,6 +3747,98 @@ def generate_invoice_pdf(invoice_number):
         logging.error(f"Error generating PDF: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+############### enable / disable customer + re-assign user
+
+@app.route("/update_customer_status_and_assignment", methods=["PUT"])
+@login_required
+def update_customer_status_and_assignment():
+    claims = get_jwt()
+    user_role = claims.get("role")
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    try:
+        data = request.json
+        company_name = data.get("companyName")
+        is_enabled = data.get("isEnabled")
+        assigned_to = data.get("assigned_to")  # optional - new user to assign
+
+        if not company_name or is_enabled is None:
+            return jsonify({"error": "Missing required fields: companyName and isEnabled"}), 400
+
+        # 1. Find the customer by companyName (case-insensitive)
+        customer = db.adebeo_customers.find_one({"companyName": {"$regex": f"^{company_name}$", "$options": "i"}})
+
+        if not customer:
+            return jsonify({"error": f"No customer found with companyName '{company_name}'"}), 404
+
+        customer_id = customer["_id"]
+
+        # 2. Update isEnabled flag for the customer document
+        db.adebeo_customers.update_one(
+            {"_id": customer_id},
+            {"$set": {"isEnabled": is_enabled}}
+        )
+
+        # 3. If assigned_to provided, update assigned user in funnel collection
+        if assigned_to:
+            db.adebeo_funnel.update_one(
+                {"customer_id": str(customer_id)},
+                {"$set": {"assigned_to": assigned_to}}
+            )
+
+        return jsonify({
+            "message": "Customer isEnabled status updated",
+            "companyName": company_name,
+            "isEnabled": is_enabled,
+            "assigned_to": assigned_to if assigned_to else "unchanged"
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Error updating customer status and assignment: {str(e)}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+################### transfer assigned user 
+@app.route('/transfer_assigned_user', methods=['PUT'])
+@login_required
+def transfer_assigned_user():
+    try:
+        # JWT-based admin check
+        claims = get_jwt()
+        user_role = claims.get("role")
+        if user_role != "admin":
+            return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing JSON body"}), 400
+
+        old_user = data.get("fromUser")
+        new_user = data.get("toUser")
+
+        if not old_user or not new_user:
+            return jsonify({"error": "Both 'fromUser' and 'toUser' fields are required."}), 400
+
+        # Perform the update
+        result = connected_users_collection.update_many(
+            {"assigned_to": old_user},
+            {
+                "$set": {
+                    "assigned_to": new_user,
+                    "assigned_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+            }
+        )
+
+        return jsonify({
+            "message": f"Transferred {result.modified_count} customers from '{old_user}' to '{new_user}'."
+        }), 200
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error transferring assigned users: {e}")
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+            
+
 @app.route("/get_purchase_orders", methods=["GET"])
 @login_required
 def get_purchase_orders():
@@ -3882,81 +4074,123 @@ def get_adebeo_orders():
 #     except Exception as e:
 #         print(f"Error: {str(e)}")
 #         return jsonify({"error": str(e)}), 500
+##############################################################disable invoice or disable invoice and Purchase order
 
+@app.route('/disable_invoice/<invoice_id>', methods=['PUT'])
+@login_required
+def disable_invoice(invoice_id):
+    try:
+        claims = get_jwt()
+        user_role = claims.get("role")
+        if user_role != "admin":
+            return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+        data = request.get_json()
+        if data is None:
+            return jsonify({"error": "Missing JSON body"}), 400
+
+        is_enable_invoice_purchase = data.get("isEnableInvoicePurchase")
+        if is_enable_invoice_purchase is None or not isinstance(is_enable_invoice_purchase, bool):
+            return jsonify({"error": "Field 'isEnableInvoicePurchase' is required and must be boolean."}), 400
+
+        # Find invoice by ID
+        invoice = invoice_collection.find_one({"_id": ObjectId(invoice_id)})
+        if not invoice:
+            return jsonify({"error": "Invoice not found."}), 404
+
+        proforma_id = invoice.get("proforma_id")
+        if not proforma_id:
+            return jsonify({"error": "Invoice missing proforma_id."}), 400
+
+        # Disable invoice
+        invoice_collection.update_one(
+            {"_id": ObjectId(invoice_id)},
+            {"$set": {"isEnabled": False}}
+        )
+
+        # Disable purchase orders if required
+        if is_enable_invoice_purchase:
+            adebeo_purchase_order_collection.update_many(
+                {"proforma_id": proforma_id},
+                {"$set": {"isEnabled": False}}
+            )
+
+        return jsonify({"message": "Invoice (and purchase orders if applicable) disabled successfully."}), 200
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error disabling invoice and purchase orders: {e}")
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 
 ############################ CxPayment DB ############################
-
-
 @app.route('/get_cxpayment', methods=['GET'])
 @login_required
 def get_cxpayment():
     try:
-        # Get the customer ID from the request parameters
         base_url = 'https://adebeo-crm1.onrender.com'
-        customer_id = request.args.get("customer_id")
-        
-        # Pagination parameters (page and limit)
-        #page = int(request.args.get("page", 1))  # Default to page 1 if not provided
-        #limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
-         # Pagination logic remains
+        customer_name = request.args.get("customer_name")
+
+        # Pagination
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
         skip = (page - 1) * per_page
 
-        # Ensure pagination values are valid
-        #if page < 1 or limit < 1:
-         #   return jsonify({"error": "Invalid page or limit"}), 400
+        # Base query: isEnabled = true (or missing)
+        query = {
+            "$or": [
+                {"isEnabled": {"$exists": False}},
+                {"isEnabled": True}
+            ]
+        }
 
-        # Calculate the skip value for MongoDB query (pagination offset)
-        #skip = (page - 1) * limit
+        # If customer_name is provided, find customer_id(s) and filter
+        if customer_name:
+            matching_customers = list(db.adebeo_customers.find({
+                "companyName": {
+                    "$regex": customer_name,
+                    "$options": "i"
+                }
+            }, {"_id": 1}))
 
-        # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
-        # invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
-        #     .sort("insertDate", -1) \
-        #     .skip(skip) \
-        #     .limit(limit)
-        #invoices_cursor = list(invoice_collection.find().skip(skip).limit(per_page))
-        invoices_cursor = list(invoice_collection.find()
-                       .sort("invoice_date", -1)  # or use "insertDate", depending on your schema
-                       .skip(skip)
-                       .limit(per_page))
-                       
+            if not matching_customers:
+                return jsonify({"message": "No customers found with that name."}), 404
+
+            customer_ids = [str(cust["_id"]) for cust in matching_customers]
+            query["customer_id"] = {"$in": customer_ids}
+
+        # Fetch invoices
+        invoices_cursor = list(invoice_collection.find(query)
+            .sort("invoice_date", -1)
+            .skip(skip)
+            .limit(per_page))
+
         if not invoices_cursor:
             return jsonify({"message": "No payment data found."}), 404
 
-        # Convert the cursor to a list of invoices and handle PDF link
+        # Format response
         invoices = []
         for invoice in invoices_cursor:
-            # Extract PDF filename and base_url (adjust field names based on your schema)
-            pdf_filename = invoice.get("pdf_filename", "")  # Default to empty string if not found
-            #base_url = invoice.get("base_url", "")  # Default to empty string if not found
-
-            # Construct PDF link
+            pdf_filename = invoice.get("pdf_filename", "")
             pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
 
-            # Build invoice data
             invoice_data = {
                 "invoice_id": str(invoice["_id"]),
-                "invoice_number": str(invoice.get("invoice_number", "")),
-                "customer_name":invoice.get("customer_name",""),
-                "customer_id":invoice.get("customer_id",""),
+                "invoice_number": invoice.get("invoice_number", ""),
+                "customer_name": invoice.get("customer_name", ""),
+                "customer_id": invoice.get("customer_id", ""),
                 "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
                 "total_amount": invoice.get("total_amount", 0),
                 "items": invoice.get("items", ""),
-                "payment_status":invoice.get("payment_status",""),
-                "amount_due":invoice.get("amount_due",0),
+                "payment_status": invoice.get("payment_status", ""),
+                "amount_due": invoice.get("amount_due", 0),
                 "pdf_link": pdf_link,
                 "base_url": base_url
             }
             invoices.append(invoice_data)
 
-        # Count total invoices for the customer to calculate total pages
-        #total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
-        # total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
-        total_count = invoice_collection.count_documents({})
+        total_count = invoice_collection.count_documents(query)
         total_pages = (total_count + per_page - 1) // per_page
 
-        # Return the invoices with pagination info
         return jsonify({
             "payments": invoices,
             "current_page": page,
@@ -3973,45 +4207,87 @@ def get_cxpayment():
 # @app.route('/get_cxpayment', methods=['GET'])
 # @login_required
 # def get_cxpayment():
-#     # Claims and role checking logic stays the same
-#     claims = get_jwt()
-#     user_role = claims.get("role") 
-
-#     if user_role != "admin":
-#         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
-
 #     try:
-#         # Pagination logic remains
+#         # Get the customer ID from the request parameters
+#         base_url = 'https://adebeo-crm1.onrender.com'
+#         customer_id = request.args.get("customer_id")
+        
+#         # Pagination parameters (page and limit)
+#         #page = int(request.args.get("page", 1))  # Default to page 1 if not provided
+#         #limit = int(request.args.get("limit", 10))  # Default to 10 invoices per page
+#          # Pagination logic remains
 #         page = int(request.args.get('page', 1))
 #         per_page = int(request.args.get('per_page', 10))
 #         skip = (page - 1) * per_page
-        
-#         # Fetch records from the 'invoice_collection' without customer_id filter
-#         payments = list(invoice_collection.find().skip(skip).limit(per_page))
 
-#         # If no payments are found, return a message
-#         if not payments:
+#         # Ensure pagination values are valid
+#         #if page < 1 or limit < 1:
+#          #   return jsonify({"error": "Invalid page or limit"}), 400
+
+#         # Calculate the skip value for MongoDB query (pagination offset)
+#         #skip = (page - 1) * limit
+
+#         # Query to find invoices for the given customer_id, sorted by insertDate in descending order (latest first)
+#         # invoices_cursor = adebeo_invoice_collection.find({"customer_id": customer_id}) \
+#         #     .sort("insertDate", -1) \
+#         #     .skip(skip) \
+#         #     .limit(limit)
+#         #invoices_cursor = list(invoice_collection.find().skip(skip).limit(per_page))
+#         invoices_cursor = list(invoice_collection.find()
+#                        .sort("invoice_date", -1)  # or use "insertDate", depending on your schema
+#                        .skip(skip)
+#                        .limit(per_page))
+                       
+#         if not invoices_cursor:
 #             return jsonify({"message": "No payment data found."}), 404
 
-#         # Calculate total pages based on total record count and per_page
+#         # Convert the cursor to a list of invoices and handle PDF link
+#         invoices = []
+#         for invoice in invoices_cursor:
+#             # Extract PDF filename and base_url (adjust field names based on your schema)
+#             pdf_filename = invoice.get("pdf_filename", "")  # Default to empty string if not found
+#             #base_url = invoice.get("base_url", "")  # Default to empty string if not found
+
+#             # Construct PDF link
+#             pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
+
+#             # Build invoice data
+#             invoice_data = {
+#                 "invoice_id": str(invoice["_id"]),
+#                 "invoice_number": str(invoice.get("invoice_number", "")),
+#                 "customer_name":invoice.get("customer_name",""),
+#                 "customer_id":invoice.get("customer_id",""),
+#                 "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
+#                 "total_amount": invoice.get("total_amount", 0),
+#                 "items": invoice.get("items", ""),
+#                 "payment_status":invoice.get("payment_status",""),
+#                 "amount_due":invoice.get("amount_due",0),
+#                 "pdf_link": pdf_link,
+#                 "base_url": base_url
+#             }
+#             invoices.append(invoice_data)
+
+#         # Count total invoices for the customer to calculate total pages
+#         #total_invoices = adebeo_invoice_collection.count_documents({"customer_id": customer_id})
+#         # total_pages = (total_invoices + limit - 1) // limit  # Ceiling division to calculate total pages
 #         total_count = invoice_collection.count_documents({})
 #         total_pages = (total_count + per_page - 1) // per_page
 
-#         # Clean up documents and remove '_id'
-#         for payment in payments:
-#             payment.pop('_id', None)
-
-#         # Return payments with pagination metadata
+#         # Return the invoices with pagination info
 #         return jsonify({
+#             "payments": invoices,
 #             "current_page": page,
-#             "payments": payments,
 #             "per_page": per_page,
 #             "total_count": total_count,
 #             "total_pages": total_pages
 #         }), 200
 
 #     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
+#         logging.error(f"Error fetching invoices: {str(e)}")
+#         return jsonify({"error": f"An error occurred while fetching invoices: {str(e)}"}), 500
+
+
+
 
 ########################## Payment collection DB ###########################
 
