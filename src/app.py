@@ -897,8 +897,14 @@ def getAll_adebeo_products():
         category_map = {c["Category_Code"]: c for c in categories}
 
         for product in products:
-            # Attach category info with fallback to "default"
-            cat_code = product.get("categoryCode", "default")
+            # Ensure categoryCode field is present (for frontend)
+            product["categoryCode"] = product.get("categoryCode") or product.get("Category_Code") or "default"
+
+            # Remove old Category_Code from top level if present
+            product.pop("Category_Code", None)
+
+            # Attach category info
+            cat_code = product["categoryCode"]
             category = category_map.get(cat_code)
 
             if not category:
@@ -914,17 +920,18 @@ def getAll_adebeo_products():
                 "Category_description": category["Category_description"]
             }
 
-            # Provide defaults for new fields if missing
-            product["type"] = product.get("type", "product")  # default type
+            # Ensure new fields exist with defaults
+            product["type"] = product.get("type", "product")
             product["isUSD"] = product.get("isUSD", False)
-            product["priceUSD"] = product.get("priceUSD", None)
-            product["priceINR"] = product.get("priceINR", None)
+            product["priceUSD"] = product.get("priceUSD", "0")
+            product["priceINR"] = product.get("priceINR", "0")
 
         return jsonify({"data": products, "total": len(products)})
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
 
 #update Category
 @app.route("/updatecategory/<category_code>", methods=["PUT"])
@@ -1233,14 +1240,15 @@ def load_edit_adebeo_products():
 
         # Get enabled categories
         enabled_categories_cursor = adebeo_categories_collection.find({"isEnabled": True})
-        enabled_categories = {cat["Category_Code"]: cat for cat in enabled_categories_cursor}
+        enabled_categories = {cat.get("Category_Code"): cat for cat in enabled_categories_cursor}
 
-        # product_query = {
-        #     "Category_Code": {"$in": list(enabled_categories.keys())}
-        # }
+        # Prepare product query
         product_query = {}
         if product_name:
-            product_query["productName"] = {"$regex": f".*{re.escape(product_name)}.*", "$options": "i"}
+            product_query["productName"] = {
+                "$regex": f".*{re.escape(product_name)}.*",
+                "$options": "i"
+            }
 
         product_data_cursor = db['adebeo_products'].find(product_query)
         product_data = list(product_data_cursor)
@@ -1248,29 +1256,43 @@ def load_edit_adebeo_products():
         if not product_data:
             return jsonify({"message": "No matching products found."}), 404
 
-        # Attach category_info inside each product
+        clean_products = []
         for product in product_data:
-            cat_code = product.get("Category_Code")
-            category = enabled_categories.get(cat_code)
-            if category:
-                product["category_info"] = {
-                    "Category_Code": category.get("Category_Code", "default"),
-                    "Category_Name": category.get("Category_Name", "default"),
-                    "Category_description": category.get("Category_description", "default"),
-                }
-            else:
-                # Fallback if category not found
-                product["category_info"] = {
-                    "Category_Code": "default",
-                    "Category_Name": "default",
-                    "Category_description": "default",
-                }
+            clean_product = dict(product)
 
-        return jsonify({"data": convert_objectid_to_str(product_data)})
+            # --- Remove redundant top-level category fields ---
+            for key in ["Category_Code", "Category_Name", "Category_description"]:
+                clean_product.pop(key, None)
+
+            # --- Add categoryCode ---
+            cat_code = product.get("categoryCode")
+            clean_product["categoryCode"] = cat_code or "default"
+
+            # --- Add category_info ---
+            category = enabled_categories.get(cat_code)
+            clean_product["category_info"] = {
+                "Category_Code": category.get("Category_Code", "default") if category else "default",
+                "Category_Name": category.get("Category_Name", "default") if category else "default",
+                "Category_description": category.get("Category_description", "default") if category else "default",
+            }
+
+            # --- Ensure required fields are present with defaults ---
+            clean_product["isUSD"] = product.get("isUSD", False)
+            clean_product["priceINR"] = product.get("priceINR", "0")
+            clean_product["priceUSD"] = product.get("priceUSD", "0")
+            clean_product["type"] = product.get("type", "product")
+
+            clean_products.append(clean_product)
+
+        return jsonify({"data": convert_objectid_to_str(clean_products)})
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
-        return jsonify({"error": "An error occurred while loading products.", "details": str(e)}), 500
+        return jsonify({
+            "error": "An error occurred while loading products.",
+            "details": str(e)
+        }), 500
+
 
 
 # @app.route("/load_edit_adebeo_products", methods=["GET"])
@@ -1362,6 +1384,7 @@ def update_adebeo_product(id: str):
 	        "modifiedDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
             "subscriptionDuration":request.json.get("subscriptionDuration"),
         #   new fields added
+            "category_Code":request.json.get("categoryCode"),
             "type":request.json.get("type"),
             "isUSD":request.json.get("isUSD"),
             "priceUSD":request.json.get("priceUSD"),
@@ -2176,243 +2199,455 @@ def generate_performa_number():
     new_performa_number = f"{prefix}{year_str}P{str(last_num + 1).zfill(4)}"  # Padding to 4 digits
     
     return new_performa_number    
-
+# route to create performa
 @app.route('/create_performa', methods=['POST'])
 @login_required
 def create_performa():
     try:
-        # Getting the username of the logged-in user
         username = request.user
         base_url = 'https://adebeo-crm1.onrender.com'
 
-        # Get the quote_number and quote_tag from the request (if any)
         quote_number = request.json.get("quote_number")
         quote_tag = request.json.get("quote_tag")
-        
-        # If no quote_number and quote_tag are provided, check for required fields (manual invoice creation)
+
         if not quote_number or not quote_tag:
             required_fields = ["customer_id", "items", "gross_total"]
             missing_fields = [field for field in required_fields if not request.json.get(field)]
             if missing_fields:
                 return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
 
-        # If quote_number and quote_tag are provided, fetch the quote details
+        # Load either quote-based or manual
         if quote_number and quote_tag:
             quote = adebeo_quotes_collection.find_one({
                 "quote_number": quote_number,
                 "quoteTag": quote_tag
             })
-
             if not quote:
                 return jsonify({"error": "Quote not found"}), 404
-            # Extract relevant fields from the quote
+
             customer_id = quote["customer_id"]
-            items = quote["items"]
+            raw_items = quote["items"]
             total_amount = quote["total_amount"]
             terms = quote["terms"]
             preformaTag = quote["quoteTag"]
-            refPoValue = request.json.get("refPoValue")
-            overall_discount = request.json.get("overall_discount")
-            tax_amount = request.json.get("tax_amount")
         else:
-            # If no quote_number or quote_tag, fetch the invoice details from the payload
             customer_id = request.json.get("customer_id")
-            items = request.json.get("items")
+            raw_items = request.json.get("items", [])
             total_amount = request.json.get("gross_total")
             terms = request.json.get("terms")
             preformaTag = request.json.get("preformaTag")
-            refPoValue = request.json.get("refPoValue")
-            overall_discount = request.json.get("overall_discount")
-            tax_amount = request.json.get("tax_amount")
+
+        refPoValue = request.json.get("refPoValue", "")
+        overall_discount = request.json.get("overall_discount", 0)
+        tax_amount = request.json.get("tax_amount", 0)
+
+        # ✅ Combo Expansion and Product Type Filter
+        processed_items = []
+        for item in raw_items:
+            is_combo = item.get("isCombo", False)  # Defaults to False if missing
+
+            if is_combo:
+                combo_code = item.get("product_id")
+                combo = adebeo_combo_products.find_one({"comboCode": combo_code})
+                if not combo:
+                    return jsonify({"error": f"Combo not found: {combo_code}"}), 404
+
+                for child in combo.get("products", []):
+                    product_id = child.get("productId")
+
+                    try:
+                        product = adebeo_products.find_one({"_id": ObjectId(product_id)})
+                    except:
+                        product = adebeo_products.find_one({"_id": product_id})
+
+                    if not product:
+                        return jsonify({"error": f"Child product not found: {product_id}"}), 404
+
+                    # Skip if type == "service"
+                    if product.get("type", "product") == "service":
+                        continue
+
+                    quantity = int(item.get("quantity", 1)) * int(child.get("quantity", 1))
+                    unit_price = float(product.get("salesCost", 0))
+                    sub_total = unit_price * quantity
+
+                    processed_items.append({
+                        "product_id": str(product["_id"]),
+                        "productCode": product.get("productCode", ""),
+                        "description": product.get("ProductDisplay", product.get("productName", "Combo Item")),
+                        "salesCode": product.get("salesCode", ""),
+                        "quantity": quantity,
+                        "discount": 0,
+                        "unit_price": unit_price,
+                        "sub_total": sub_total,
+                        "dr_status": "",
+                        "isCombo": False
+                    })
+            else:
+                # ✅ Handle non-combo item and check type
+                product_id = item.get("product_id")
+                try:
+                    product = adebeo_products.find_one({"_id": ObjectId(product_id)})
+                except:
+                    product = adebeo_products.find_one({"_id": product_id})
+
+                if not product:
+                    return jsonify({"error": f"Product not found: {product_id}"}), 404
+
+                if product.get("type", "product") == "service":
+                    continue  # Skip adding services for PO
+
+                processed_items.append(item)
+
         # Get customer details
         try:
-            # Attempt to match customer_id as ObjectId
             customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
-        except InvalidId:
-            # Fallback to string-based match
+        except:
             customer = adebeo_customer_collection.find_one({"_id": customer_id})
-
         if not customer:
             return jsonify({"error": "Customer not found"}), 404
-
-        # Convert ObjectId fields to strings for the response
         customer = convert_objectid_to_str(customer)
 
-        # Generate the invoice number (e.g., AD2025I01)
+        # Company details
         performa_number = generate_performa_number()
         company_document = company_datas.find_one({})
+        cleaned_document = {key.strip('\"'): value for key, value in company_document.items()} if company_document else {}
 
-        # Check if the document exists and contains the required fields
-        if company_document:
-            # Clean the keys by removing extra quotes around the field names
-            cleaned_document = {key.strip('\"'): value for key, value in company_document.items()}
+        # Assign with defaults
+        company_name = cleaned_document.get("company_name", "Adebeo")
+        company_address = cleaned_document.get("company_address", "Bangalore")
+        company_contact = cleaned_document.get("company_contact", "9008513444")
+        company_email = cleaned_document.get("company_email", "info@adebeo.co.in")
+        company_gstin = cleaned_document.get("company_gstin", "-")
+        company_account_no1 = cleaned_document.get("company_account1", "")
+        company_bankbranch1 = cleaned_document.get("company_bankbranch1", "")
+        company_bank = cleaned_document.get("company_bank", "")
+        company_ifsc1 = cleaned_document.get("company_ifsc1", "")
+        company_swift1 = cleaned_document.get("company_swift1", "")
+        company_pan = cleaned_document.get("company_pan", "")
+        invoice_note1 = cleaned_document.get("invoice_note1", "")
+        company_payee = cleaned_document.get("company_payee", "")
 
-            # Now, you can safely access the fields without the extra quotes
-            about_us = cleaned_document.get("about_us", "No information available.")
-            terms1 = cleaned_document.get("terms1", "No terms available.")
-            products = cleaned_document.get("products", "No products information available.")
-            company_name = cleaned_document.get("company_name", "Adebeo")
-            company_address = cleaned_document.get("company_address", "Bangalore")
-            company_contact = cleaned_document.get("company_contact", "9008513444")
-            company_email = cleaned_document.get("company_email", "narayan@adebeo.co.in")
-            company_gstin = cleaned_document.get("company_gstin", "-")
-            company_account_no1 =cleaned_document.get("company_account1", " ")
-            company_bankbranch1 =cleaned_document.get("company_bankbranch1", " ")
-            company_bank =cleaned_document.get("company_bank", " ")
-            company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
-            company_swift1 = cleaned_document.get("company_swift1", "-")
-            company_pan = cleaned_document.get("company_pan", "-")
-            invoice_note1= cleaned_document.get("invoice_note1", " ")
-            company_payee= cleaned_document.get("company_payee", " ")
-
-
-     
-        # Prepare the invoice data to insert into the database and send to the template
+        # Save to DB
         performa = {
             "performa_number": performa_number,
             "customer_id": customer_id,
             "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")),
             "insertBy": username,
-            "items": items,
+            "items": processed_items,
             "total_amount": total_amount,
             "terms": terms,
             "base_url": base_url,
             "preformaTag": preformaTag,
-            "refPoValue" : refPoValue,
+            "refPoValue": refPoValue,
             "tax_amount": tax_amount,
-            "overall_discount":overall_discount
-            
+            "overall_discount": overall_discount
         }
 
-        # Log the data being received and the invoice being created
-        logging.debug("Received performa data: %s", performa)
-
-        # Extract relevant fields to pass to the template
-        po_invoice = {
-            "performa_number": performa["performa_number"],
-            "date": performa["insertDate"].strftime('%Y-%m-%d'),
-            "company_description": "Our company ABC Solutions specializes in delivering top-quality products and services tailored to your needs.",
-            "customer_name": customer.get("companyName", "N/A"),
-            "customer_address": customer.get("address", "N/A"),
-            "customer_email": customer.get("primaryEmail", "N/A"),
-            "customer_phone": customer.get("mobileNumber", "N/A"),
-            "customer_gstin": customer.get("gstin",'-'),
-            "products": performa["items"],
-            "terms": performa["terms"],
-            "preformaTag": preformaTag,
-            "refPoValue" :refPoValue
-        }
-
-        # Log the final data being passed to the template
-        logging.debug("Data passed to template: %s", po_invoice)
-
-        # Insert the invoice into the database
         result = adebeo_performa_collection.insert_one(performa)
         if not result.inserted_id:
-            return jsonify({"error": "Invoice not generated"}), 404
+            return jsonify({"error": "Invoice not generated"}), 500
 
-        # Generate the HTML for the invoice using the template
-        preformaTag = preformaTag.replace('-', '')  # Remove dashes or handle other problematic characters
+        # HTML Generation
         rendered_html = render_template(
-            "profoma_template.html",  # Create a similar template like "quote_template2.html"
-            po_invoice = po_invoice,
-            performa_number=po_invoice["performa_number"],
-            date=po_invoice["date"],
-            company_description=po_invoice["company_description"],
-            customer_name=po_invoice["customer_name"],
-            customer_address=po_invoice["customer_address"],
-            customer_email=po_invoice["customer_email"],
-            customer_phone=po_invoice["customer_phone"],
-            customer_gstin ="GSTIN: "+po_invoice["customer_gstin"],
-            company_name = company_name,
+            "profoma_template.html",
+            po_invoice=performa,
+            performa_number=performa_number,
+            date=performa["insertDate"].strftime('%Y-%m-%d'),
+            customer_name=customer.get("companyName", "N/A"),
+            customer_address=customer.get("address", "N/A"),
+            customer_email=customer.get("primaryEmail", "N/A"),
+            customer_phone=customer.get("mobileNumber", "N/A"),
+            customer_gstin="GSTIN: " + customer.get("gstin", "-"),
+            products=processed_items,
+            terms=terms,
+            preformaTag=preformaTag.replace("-", ""),
+            base_url=base_url,
+            total_sum=sum(item.get('sub_total', 0) for item in processed_items),
+            amount_in_words=num2words(total_amount),
+            gross_total=total_amount,
+            addl_discount=overall_discount,
+            company_name=company_name,
             company_address=company_address,
-            products=po_invoice["products"],
-            terms=po_invoice["terms"],
-            preformaTag=po_invoice["preformaTag"],
-            base_url= base_url,
-            total_sum = sum(item.get('sub_total', 0) for item in request.json['items']),
-            amount_in_words  = num2words(total_amount),
-            gross_total = total_amount,
-            addl_discount = overall_discount,
-            company_gstin = company_gstin,
-            company_account_no1 =company_account_no1,
-            company_bankbranch1 =company_bankbranch1,
-            company_bank =company_bank,
-            company_ifsc1 = company_ifsc1,
-            company_swift1 = company_swift1,
-            company_pan = company_pan,
-            notes = invoice_note1,
-            company_payee= company_payee,
-            company_email= company_email,
+            company_gstin=company_gstin,
+            company_account_no1=company_account_no1,
+            company_bankbranch1=company_bankbranch1,
+            company_bank=company_bank,
+            company_ifsc1=company_ifsc1,
+            company_swift1=company_swift1,
+            company_pan=company_pan,
+            notes=invoice_note1,
+            company_payee=company_payee,
+            company_email=company_email,
             company_contact=company_contact,
-            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
-            po_ref = refPoValue 
-           
-            #customer_name = po_invoice["customer_name"]+" \n"+po_invoice["customer_address"]
+            logo_image="https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png",
+            po_ref=refPoValue
         )
 
-        # Log the HTML that will be converted to PDF
-        logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
-
-        # Generate a random UUID for the file name
+        # Save PDF
         pdf_filename = f"performa_{uuid.uuid4()}.pdf"
+        local_path = f"./static/pdf/{pdf_filename}"
+        remote_path = f"/mnt/render/persistent/pdf/{pdf_filename}"
 
-        # Local file save (for debugging purposes)
-        local_pdf_folder = './static/pdf'  # Local folder for testing
-        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
-        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        os.makedirs("./static/pdf", exist_ok=True)
+        os.makedirs("/mnt/render/persistent/pdf", exist_ok=True)
 
-        try:
-            logging.debug("Attempting to save PDF locally at: %s", local_pdf_file_path)
-            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
-            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
-        except Exception as e:
-            logging.error(f"Error saving local PDF: {str(e)}")
+        HTML(string=rendered_html).write_pdf(local_path)
+        HTML(string=rendered_html).write_pdf(remote_path)
 
-        # Remote file save (on Render persistent disk)
-        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
-        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
-        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+        adebeo_performa_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"pdf_filename": pdf_filename}}
+        )
 
-        try:
-            logging.debug("Attempting to save PDF remotely at: %s", remote_pdf_file_path)
-            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
-            # Check if the file was saved successfully
-            if os.path.exists(remote_pdf_file_path):
-                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
-            else:
-                logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
-        except Exception as e:
-            logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
-
-        # Add the pdf_filename to the invoice data before inserting into the database
-        logging.debug("Attempting to update database with PDF filename: %s", pdf_filename)
-        try:
-            adebeo_performa_collection.update_one(
-                {"_id": result.inserted_id},
-                {"$set": {"pdf_filename": pdf_filename}}
-            )
-            logging.debug("Database updated with PDF filename successfully.")
-        except Exception as e:
-            logging.error(f"Error updating database with PDF filename: {str(e)}")
-
-        # Respond with success message and link to the generated PDF
-        response = {
+        return jsonify({
             "message": "Performa successfully created!",
             "performa_id": str(result.inserted_id),
-            "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
-            "base_url": base_url  # Ensure this is never None
-        }
-
-        # Log the response data
-        logging.debug("Response: %s", response)
-
-        return jsonify(response), 201
+            "pdf_link": f"/static/pdf/{pdf_filename}",
+            "base_url": base_url
+        }), 201
 
     except Exception as e:
-        # Log the error for troubleshooting
         logging.error("Error creating Performa invoice: %s", str(e))
         return jsonify({"error": str(e)}), 500
+
+
+# @app.route('/create_performa', methods=['POST'])
+# @login_required
+# def create_performa():
+#     try:
+#         # Getting the username of the logged-in user
+#         username = request.user
+#         base_url = 'https://adebeo-crm1.onrender.com'
+
+#         # Get the quote_number and quote_tag from the request (if any)
+#         quote_number = request.json.get("quote_number")
+#         quote_tag = request.json.get("quote_tag")
+        
+#         # If no quote_number and quote_tag are provided, check for required fields (manual invoice creation)
+#         if not quote_number or not quote_tag:
+#             required_fields = ["customer_id", "items", "gross_total"]
+#             missing_fields = [field for field in required_fields if not request.json.get(field)]
+#             if missing_fields:
+#                 return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
+
+#         # If quote_number and quote_tag are provided, fetch the quote details
+#         if quote_number and quote_tag:
+#             quote = adebeo_quotes_collection.find_one({
+#                 "quote_number": quote_number,
+#                 "quoteTag": quote_tag
+#             })
+
+#             if not quote:
+#                 return jsonify({"error": "Quote not found"}), 404
+#             # Extract relevant fields from the quote
+#             customer_id = quote["customer_id"]
+#             items = quote["items"]
+#             total_amount = quote["total_amount"]
+#             terms = quote["terms"]
+#             preformaTag = quote["quoteTag"]
+#             refPoValue = request.json.get("refPoValue")
+#             overall_discount = request.json.get("overall_discount")
+#             tax_amount = request.json.get("tax_amount")
+#         else:
+#             # If no quote_number or quote_tag, fetch the invoice details from the payload
+#             customer_id = request.json.get("customer_id")
+#             items = request.json.get("items")
+#             total_amount = request.json.get("gross_total")
+#             terms = request.json.get("terms")
+#             preformaTag = request.json.get("preformaTag")
+#             refPoValue = request.json.get("refPoValue")
+#             overall_discount = request.json.get("overall_discount")
+#             tax_amount = request.json.get("tax_amount")
+#         # Get customer details
+#         try:
+#             # Attempt to match customer_id as ObjectId
+#             customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+#         except InvalidId:
+#             # Fallback to string-based match
+#             customer = adebeo_customer_collection.find_one({"_id": customer_id})
+
+#         if not customer:
+#             return jsonify({"error": "Customer not found"}), 404
+
+#         # Convert ObjectId fields to strings for the response
+#         customer = convert_objectid_to_str(customer)
+
+#         # Generate the invoice number (e.g., AD2025I01)
+#         performa_number = generate_performa_number()
+#         company_document = company_datas.find_one({})
+
+#         # Check if the document exists and contains the required fields
+#         if company_document:
+#             # Clean the keys by removing extra quotes around the field names
+#             cleaned_document = {key.strip('\"'): value for key, value in company_document.items()}
+
+#             # Now, you can safely access the fields without the extra quotes
+#             about_us = cleaned_document.get("about_us", "No information available.")
+#             terms1 = cleaned_document.get("terms1", "No terms available.")
+#             products = cleaned_document.get("products", "No products information available.")
+#             company_name = cleaned_document.get("company_name", "Adebeo")
+#             company_address = cleaned_document.get("company_address", "Bangalore")
+#             company_contact = cleaned_document.get("company_contact", "9008513444")
+#             company_email = cleaned_document.get("company_email", "narayan@adebeo.co.in")
+#             company_gstin = cleaned_document.get("company_gstin", "-")
+#             company_account_no1 =cleaned_document.get("company_account1", " ")
+#             company_bankbranch1 =cleaned_document.get("company_bankbranch1", " ")
+#             company_bank =cleaned_document.get("company_bank", " ")
+#             company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
+#             company_swift1 = cleaned_document.get("company_swift1", "-")
+#             company_pan = cleaned_document.get("company_pan", "-")
+#             invoice_note1= cleaned_document.get("invoice_note1", " ")
+#             company_payee= cleaned_document.get("company_payee", " ")
+
+
+     
+#         # Prepare the invoice data to insert into the database and send to the template
+#         performa = {
+#             "performa_number": performa_number,
+#             "customer_id": customer_id,
+#             "insertDate": datetime.now(ZoneInfo("Asia/Kolkata")),
+#             "insertBy": username,
+#             "items": items,
+#             "total_amount": total_amount,
+#             "terms": terms,
+#             "base_url": base_url,
+#             "preformaTag": preformaTag,
+#             "refPoValue" : refPoValue,
+#             "tax_amount": tax_amount,
+#             "overall_discount":overall_discount
+            
+#         }
+
+#         # Log the data being received and the invoice being created
+#         logging.debug("Received performa data: %s", performa)
+
+#         # Extract relevant fields to pass to the template
+#         po_invoice = {
+#             "performa_number": performa["performa_number"],
+#             "date": performa["insertDate"].strftime('%Y-%m-%d'),
+#             "company_description": "Our company ABC Solutions specializes in delivering top-quality products and services tailored to your needs.",
+#             "customer_name": customer.get("companyName", "N/A"),
+#             "customer_address": customer.get("address", "N/A"),
+#             "customer_email": customer.get("primaryEmail", "N/A"),
+#             "customer_phone": customer.get("mobileNumber", "N/A"),
+#             "customer_gstin": customer.get("gstin",'-'),
+#             "products": performa["items"],
+#             "terms": performa["terms"],
+#             "preformaTag": preformaTag,
+#             "refPoValue" :refPoValue
+#         }
+
+#         # Log the final data being passed to the template
+#         logging.debug("Data passed to template: %s", po_invoice)
+
+#         # Insert the invoice into the database
+#         result = adebeo_performa_collection.insert_one(performa)
+#         if not result.inserted_id:
+#             return jsonify({"error": "Invoice not generated"}), 404
+
+#         # Generate the HTML for the invoice using the template
+#         preformaTag = preformaTag.replace('-', '')  # Remove dashes or handle other problematic characters
+#         rendered_html = render_template(
+#             "profoma_template.html",  # Create a similar template like "quote_template2.html"
+#             po_invoice = po_invoice,
+#             performa_number=po_invoice["performa_number"],
+#             date=po_invoice["date"],
+#             company_description=po_invoice["company_description"],
+#             customer_name=po_invoice["customer_name"],
+#             customer_address=po_invoice["customer_address"],
+#             customer_email=po_invoice["customer_email"],
+#             customer_phone=po_invoice["customer_phone"],
+#             customer_gstin ="GSTIN: "+po_invoice["customer_gstin"],
+#             company_name = company_name,
+#             company_address=company_address,
+#             products=po_invoice["products"],
+#             terms=po_invoice["terms"],
+#             preformaTag=po_invoice["preformaTag"],
+#             base_url= base_url,
+#             total_sum = sum(item.get('sub_total', 0) for item in request.json['items']),
+#             amount_in_words  = num2words(total_amount),
+#             gross_total = total_amount,
+#             addl_discount = overall_discount,
+#             company_gstin = company_gstin,
+#             company_account_no1 =company_account_no1,
+#             company_bankbranch1 =company_bankbranch1,
+#             company_bank =company_bank,
+#             company_ifsc1 = company_ifsc1,
+#             company_swift1 = company_swift1,
+#             company_pan = company_pan,
+#             notes = invoice_note1,
+#             company_payee= company_payee,
+#             company_email= company_email,
+#             company_contact=company_contact,
+#             logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
+#             po_ref = refPoValue 
+           
+#             #customer_name = po_invoice["customer_name"]+" \n"+po_invoice["customer_address"]
+#         )
+
+#         # Log the HTML that will be converted to PDF
+#         logging.debug("Rendered HTML: %s", rendered_html[:500])  # Print first 500 chars of HTML for debugging
+
+#         # Generate a random UUID for the file name
+#         pdf_filename = f"performa_{uuid.uuid4()}.pdf"
+
+#         # Local file save (for debugging purposes)
+#         local_pdf_folder = './static/pdf'  # Local folder for testing
+#         os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+#         local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+
+#         try:
+#             logging.debug("Attempting to save PDF locally at: %s", local_pdf_file_path)
+#             HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+#             logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+#         except Exception as e:
+#             logging.error(f"Error saving local PDF: {str(e)}")
+
+#         # Remote file save (on Render persistent disk)
+#         remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+#         os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+#         remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+#         try:
+#             logging.debug("Attempting to save PDF remotely at: %s", remote_pdf_file_path)
+#             HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+#             # Check if the file was saved successfully
+#             if os.path.exists(remote_pdf_file_path):
+#                 logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+#             else:
+#                 logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+#         except Exception as e:
+#             logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+
+#         # Add the pdf_filename to the invoice data before inserting into the database
+#         logging.debug("Attempting to update database with PDF filename: %s", pdf_filename)
+#         try:
+#             adebeo_performa_collection.update_one(
+#                 {"_id": result.inserted_id},
+#                 {"$set": {"pdf_filename": pdf_filename}}
+#             )
+#             logging.debug("Database updated with PDF filename successfully.")
+#         except Exception as e:
+#             logging.error(f"Error updating database with PDF filename: {str(e)}")
+
+#         # Respond with success message and link to the generated PDF
+#         response = {
+#             "message": "Performa successfully created!",
+#             "performa_id": str(result.inserted_id),
+#             "pdf_link": f"/static/pdf/{pdf_filename}" if pdf_filename else "",
+#             "base_url": base_url  # Ensure this is never None
+#         }
+
+#         # Log the response data
+#         logging.debug("Response: %s", response)
+
+#         return jsonify(response), 201
+
+#     except Exception as e:
+#         # Log the error for troubleshooting
+#         logging.error("Error creating Performa invoice: %s", str(e))
+#         return jsonify({"error": str(e)}), 500
 
 
 
