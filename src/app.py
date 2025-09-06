@@ -4054,7 +4054,7 @@ def transfer_assigned_user():
             return jsonify({"error": "Both 'fromUser' and 'toUser' fields are required."}), 400
 
         # Perform the update
-        result = adebeo_users_collection.update_many(
+        result = adebeo_user_funnel.update_many(
             {"assigned_to": old_user},
             {
                 "$set": {
@@ -4340,14 +4340,16 @@ def disable_invoice(invoice_id):
         # Disable invoice
         invoice_collection.update_one(
             {"_id": ObjectId(invoice_id)},
-            {"$set": {"isEnabled": False}}
+            {"$set": {"isEnabled": False,
+                        "payment_status":"Cancelled"}}
         )
 
         # Disable purchase orders if required
         if is_enable_invoice_purchase:
             adebeo_purchase_order_collection.update_many(
                 {"proforma_id": proforma_id},
-                {"$set": {"isEnabled": False}}
+                {"$set": {"isEnabled": False,
+                            "status":"Cancelled"}}
             )
 
         return jsonify({"message": "Invoice (and purchase orders if applicable) disabled successfully."}), 200
@@ -4356,6 +4358,58 @@ def disable_invoice(invoice_id):
         import logging
         logging.error(f"Error disabling invoice and purchase orders: {e}")
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+
+############################recreate cancelled Invoice ###############
+@app.route('/recreate_invoice/<cancelled_invoice_id>', methods=['POST'])
+@login_required
+def recreate_invoice(cancelled_invoice_id):
+    try:
+        # Step 1: Fetch the cancelled invoice
+        old_invoice = invoice_collection.find_one({"_id": ObjectId(cancelled_invoice_id)})
+
+        if not old_invoice:
+            return jsonify({"error": "Original invoice not found."}), 404
+
+        if old_invoice.get("payment_status") != "Cancelled":
+            return jsonify({"error": "Only cancelled invoices can be recreated."}), 400
+
+        # Step 2: Generate a new invoice number (custom logic here)
+        # You can customize this to match your numbering scheme
+        new_invoice_number = generate_invoice_number()
+
+        # Step 3: Prepare new invoice data
+        new_invoice = {
+            "invoice_number": new_invoice_number,
+            "customer_id": old_invoice.get("customer_id"),
+            "customer_name": old_invoice.get("customer_name"),
+            "proforma_id": old_invoice.get("proforma_id"),
+            "total_amount": old_invoice.get("total_amount"),
+            "amount_due": old_invoice.get("amount_due"),
+            "items": old_invoice.get("items"),
+            "invoice_date": datetime.now(),  # new date
+            "payment_status": "Pending",  # new status
+            "payment_method": "",
+            "payment_reference": "",
+            "due_date": None,
+            "po_number": old_invoice.get("po_number"),
+            "po_ref": "",
+            "cancelled_invoice": old_invoice.get("invoice_number"),
+            "isEnabled": True
+        }
+
+        # Step 4: Insert into DB
+        result = invoice_collection.insert_one(new_invoice)
+
+        return jsonify({
+            "message": "Invoice recreated successfully.",
+            "new_invoice_id": str(result.inserted_id),
+            "new_invoice_number": new_invoice_number
+        }), 201
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error recreating invoice: {e}")
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500        
 
 ############################ CxPayment DB ############################
 @app.route('/get_cxpayment', methods=['GET'])
@@ -4370,13 +4424,16 @@ def get_cxpayment():
         per_page = int(request.args.get('per_page', 10))
         skip = (page - 1) * per_page
 
-        # Base query: isEnabled = true (or missing)
-        query = {
-            "$or": [
+        # Check if we should include disabled invoices
+        include_disabled = request.args.get('include_disabled', 'false').lower() == 'true'
+
+        # Base query
+        query = {}
+        if not include_disabled:
+            query["$or"] = [
                 {"isEnabled": {"$exists": False}},
                 {"isEnabled": True}
             ]
-        }
 
         # If customer_name is provided, find customer_id(s) and filter
         if customer_name:
@@ -4437,6 +4494,88 @@ def get_cxpayment():
     except Exception as e:
         logging.error(f"Error fetching invoices: {str(e)}")
         return jsonify({"error": f"An error occurred while fetching invoices: {str(e)}"}), 500
+
+
+
+# @app.route('/get_cxpayment', methods=['GET']) # this was disabled on Septembe 06
+# @login_required
+# def get_cxpayment():
+#     try:
+#         base_url = 'https://adebeo-crm1.onrender.com'
+#         customer_name = request.args.get("customer_name")
+
+#         # Pagination
+#         page = int(request.args.get('page', 1))
+#         per_page = int(request.args.get('per_page', 10))
+#         skip = (page - 1) * per_page
+
+#         # Base query: isEnabled = true (or missing)
+#         query = {
+#             "$or": [
+#                 {"isEnabled": {"$exists": False}},
+#                 {"isEnabled": True}
+#             ]
+#         }
+
+#         # If customer_name is provided, find customer_id(s) and filter
+#         if customer_name:
+#             matching_customers = list(db.adebeo_customers.find({
+#                 "companyName": {
+#                     "$regex": customer_name,
+#                     "$options": "i"
+#                 }
+#             }, {"_id": 1}))
+
+#             if not matching_customers:
+#                 return jsonify({"message": "No customers found with that name."}), 404
+
+#             customer_ids = [str(cust["_id"]) for cust in matching_customers]
+#             query["customer_id"] = {"$in": customer_ids}
+
+#         # Fetch invoices
+#         invoices_cursor = list(invoice_collection.find(query)
+#             .sort("invoice_date", -1)
+#             .skip(skip)
+#             .limit(per_page))
+
+#         if not invoices_cursor:
+#             return jsonify({"message": "No payment data found."}), 404
+
+#         # Format response
+#         invoices = []
+#         for invoice in invoices_cursor:
+#             pdf_filename = invoice.get("pdf_filename", "")
+#             pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
+
+#             invoice_data = {
+#                 "invoice_id": str(invoice["_id"]),
+#                 "invoice_number": invoice.get("invoice_number", ""),
+#                 "customer_name": invoice.get("customer_name", ""),
+#                 "customer_id": invoice.get("customer_id", ""),
+#                 "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
+#                 "total_amount": invoice.get("total_amount", 0),
+#                 "items": invoice.get("items", ""),
+#                 "payment_status": invoice.get("payment_status", ""),
+#                 "amount_due": invoice.get("amount_due", 0),
+#                 "pdf_link": pdf_link,
+#                 "base_url": base_url
+#             }
+#             invoices.append(invoice_data)
+
+#         total_count = invoice_collection.count_documents(query)
+#         total_pages = (total_count + per_page - 1) // per_page
+
+#         return jsonify({
+#             "payments": invoices,
+#             "current_page": page,
+#             "per_page": per_page,
+#             "total_count": total_count,
+#             "total_pages": total_pages
+#         }), 200
+
+#     except Exception as e:
+#         logging.error(f"Error fetching invoices: {str(e)}")
+#         return jsonify({"error": f"An error occurred while fetching invoices: {str(e)}"}), 500
 
 
 # @app.route('/get_cxpayment', methods=['GET'])
