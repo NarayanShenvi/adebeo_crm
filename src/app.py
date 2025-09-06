@@ -4054,7 +4054,7 @@ def transfer_assigned_user():
             return jsonify({"error": "Both 'fromUser' and 'toUser' fields are required."}), 400
 
         # Perform the update
-        result = connected_users_collection.update_many(
+        result = adebeo_users_collection.update_many(
             {"assigned_to": old_user},
             {
                 "$set": {
