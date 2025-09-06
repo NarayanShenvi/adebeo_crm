@@ -898,10 +898,10 @@ def getAll_adebeo_products():
 
         for product in products:
             # Ensure categoryCode field is present (for frontend)
-            product["categoryCode"] = product.get("categoryCode") or product.get("Category_Code") or "default"
+            product["categoryCode"] = product.get("categoryCode") #or product.get("Category_Code") or "default"
 
             # Remove old Category_Code from top level if present
-            product.pop("Category_Code", None)
+            #product.pop("Category_Code", None)
 
             # Attach category info
             cat_code = product["categoryCode"]
@@ -1384,7 +1384,7 @@ def update_adebeo_product(id: str):
 	        "modifiedDate":datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),  # Set to IST
             "subscriptionDuration":request.json.get("subscriptionDuration"),
         #   new fields added
-            "category_Code":request.json.get("categoryCode"),
+            "categoryCode":request.json.get("categoryCode"),
             "type":request.json.get("type"),
             "isUSD":request.json.get("isUSD"),
             "priceUSD":request.json.get("priceUSD"),
