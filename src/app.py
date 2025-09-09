@@ -4373,8 +4373,13 @@ def recreate_invoice(cancelled_invoice_id):
         if old_invoice.get("payment_status") != "Cancelled":
             return jsonify({"error": "Only cancelled invoices can be recreated."}), 400
 
+        # ✅ Step 1.5: Update old invoice's payment_status to "Regenerated"
+        invoice_collection.update_one(
+            {"_id": ObjectId(cancelled_invoice_id)},
+            {"$set": {"payment_status": "Regenerated"}}
+        )
+
         # Step 2: Generate a new invoice number (custom logic here)
-        # You can customize this to match your numbering scheme
         new_invoice_number = generate_invoice_number()
 
         # Step 3: Prepare new invoice data
@@ -4409,7 +4414,7 @@ def recreate_invoice(cancelled_invoice_id):
     except Exception as e:
         import logging
         logging.error(f"Error recreating invoice: {e}")
-        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500        
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 
 ############################ CxPayment DB ############################
 @app.route('/get_cxpayment', methods=['GET'])
@@ -4762,6 +4767,103 @@ def process_payment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+########################### Report for Sales ###########################
+### this is very generic code will require refinement
+import logging
+import traceback
+import datetime
+
+@app.route('/report/sales_summary', methods=['GET'])
+@jwt_required()
+def sales_summary():
+    try:
+        claims = get_jwt()
+        user_role = claims.get("role")
+        if user_role != "admin":
+            return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+        product_id = request.args.get("product_id")
+        user_id = request.args.get("user_id")
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
+
+        match_conditions = {}
+
+        # Date filter parsing
+        if start_date_str or end_date_str:
+            date_filter = {}
+            if start_date_str:
+                try:
+                    start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d')
+                    date_filter["$gte"] = start_date
+                except ValueError:
+                    return jsonify({"error": "Invalid start_date format. Use YYYY-MM-DD."}), 400
+            if end_date_str:
+                try:
+                    end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d') + datetime.timedelta(days=1)
+                    date_filter["$lt"] = end_date
+                except ValueError:
+                    return jsonify({"error": "Invalid end_date format. Use YYYY-MM-DD."}), 400
+            match_conditions["invoice_date"] = date_filter
+
+        # Optional product_id filter
+        if product_id:
+            if not ObjectId.is_valid(product_id):
+                return jsonify({"error": "Invalid product_id"}), 400
+            match_conditions["items.product_id"] = product_id
+
+        # Optional user_id filter
+        if user_id:
+            if not ObjectId.is_valid(user_id):
+                return jsonify({"error": "Invalid user_id"}), 400
+            match_conditions["sales_person_id"] = user_id
+
+        # Base match for payment_status = 'Paid' (adjust if needed)
+        match_conditions["payment_status"] = "Paid"
+
+        pipeline = [
+            {"$match": match_conditions},
+            {"$unwind": "$items"},
+        ]
+
+        # If product_id filter exists, the $match on items.product_id after $unwind is better:
+        if product_id:
+            pipeline.append({"$match": {"items.product_id": product_id}})
+
+        # Group by product_id and product name from items.description
+        pipeline.append({
+            "$group": {
+                "_id": "$items.product_id",
+                "product_name": {"$first": "$items.description"},
+                "invoice_count": {"$sum": 1},
+                "total_revenue": {"$sum": {"$multiply": ["$items.quantity", "$items.unit_price"]}},
+                "units_sold": {"$sum": {"$toInt": "$items.quantity"}}
+            }
+        })
+
+        # Optionally, sort by total revenue descending
+        pipeline.append({"$sort": {"total_revenue": -1}})
+
+        grouped_data = list(adebeo_invoice_collection.aggregate(pipeline))
+
+        # Compute summary totals from grouped data
+        total_invoices = len(grouped_data)
+        total_revenue = sum(item.get("total_revenue", 0) for item in grouped_data)
+        total_units_sold = sum(item.get("units_sold", 0) for item in grouped_data)
+
+        return jsonify({
+            "grouped_data": grouped_data,
+            "summary": {
+                "total_invoices": total_invoices,
+                "total_revenue": total_revenue,
+                "total_units_sold": total_units_sold
+            }
+        }), 200
+
+    except Exception as e:
+       logging.error(f"Exception: {e}")
+       logging.error(traceback.format_exc())
+       return jsonify({"error": "Internal Server Error"}), 500
 
 ########################### Report for user #############################
 
