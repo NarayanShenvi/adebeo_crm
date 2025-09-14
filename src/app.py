@@ -263,7 +263,6 @@ def convert_objectid_to_str(data):
     else:
         return data
 
-
 @app.route("/funnel_users", methods=["GET"])
 @login_required
 def get_funnel_users():
@@ -277,12 +276,10 @@ def get_funnel_users():
         company_name = request.args.get('companyName', None)
         skip = (page - 1) * limit
 
-        # Filter assigned_to if not admin or tech
         match_filter = {}
         if user_role not in ['admin', 'tech']:
             match_filter["assigned_to"] = username
 
-        # Prepare company name regex
         company_name_regex = None
         if company_name:
             company_name_decoded = unquote(company_name).strip()
@@ -293,7 +290,7 @@ def get_funnel_users():
         if match_filter:
             pipeline.append({ "$match": match_filter })
 
-        # Lookup customers (customer_id is string)
+        # Lookup customers
         pipeline.append({
             "$lookup": {
                 "from": "adebeo_customers",
@@ -311,7 +308,6 @@ def get_funnel_users():
             }
         })
 
-        # Unwind customer array
         pipeline.append({
             "$unwind": {
                 "path": "$customer",
@@ -329,6 +325,35 @@ def get_funnel_users():
                     }
                 }
             })
+
+        # Lookup products
+        pipeline.append({
+            "$lookup": {
+                "from": "adebeo_products",  # Adjust collection name if needed
+                "let": { "product_ids_str": "$customer.products" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$in": [
+                                    { "$toString": "$_id" },
+                                    { "$ifNull": ["$$product_ids_str", []] }
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "productCode": 1,
+                            "ProductDisplay": 1,
+                            "productName": 1
+                        }
+                    }
+                ],
+                "as": "products"
+            }
+        })
 
         # Count total records
         count_pipeline = pipeline + [{ "$count": "total" }]
@@ -358,26 +383,48 @@ def get_funnel_users():
             }
         })
 
-        # Final projection — flatten customer and merge comments
+        # Final projection: merge customer + comments + products
         pipeline.append({
             "$replaceRoot": {
                 "newRoot": {
-                    "$mergeObjects": ["$customer", { "comments": "$comments" }]
+                    "$mergeObjects": [
+                        "$customer",
+                        {
+                            "comments": "$comments",
+                            "products": "$products"
+                        },
+                        {
+                            "assigned_to": "$assigned_to",
+                            "assigned_date": "$assigned_date"
+                        }
+                    ]
                 }
             }
         })
 
-        # Execute final pipeline
+        # Execute pipeline
         results = list(db.adebeo_funnel.aggregate(pipeline))
 
-        # Convert ObjectIds to strings
+        # Post-processing: convert IDs to strings, add fallback for missing products
         for r in results:
             r["_id"] = str(r["_id"])
+
             for comment in r.get("comments", []):
                 comment["_id"] = str(comment["_id"])
                 comment["customer_id"] = str(comment["customer_id"])
 
-        # Return response
+            # If products are missing or empty, inject fallback
+            if not r.get("products"):
+                r["products"] = [{
+                    "productCode": "NA",
+                    "ProductDisplay": "NA",
+                    "productName": "NA"
+                }]
+            else:
+                for product in r["products"]:
+                    product["_id"] = str(product["_id"])
+
+        # Return final response
         return jsonify({
             "data": results,
             "limit": limit,
@@ -388,6 +435,135 @@ def get_funnel_users():
 
     except Exception as e:
         return jsonify({ "message": "An error occurred", "error": str(e) }), 500
+
+
+
+
+
+# @app.route("/funnel_users", methods=["GET"])
+# @login_required
+# def get_funnel_users():
+#     username = request.user
+#     claims = get_jwt()
+#     user_role = claims.get("role")
+
+#     try:
+#         page = int(request.args.get('page', 1))
+#         limit = int(request.args.get('limit', 10))
+#         company_name = request.args.get('companyName', None)
+#         skip = (page - 1) * limit
+
+#         # Filter assigned_to if not admin or tech
+#         match_filter = {}
+#         if user_role not in ['admin', 'tech']:
+#             match_filter["assigned_to"] = username
+
+#         # Prepare company name regex
+#         company_name_regex = None
+#         if company_name:
+#             company_name_decoded = unquote(company_name).strip()
+#             company_name_regex = re.escape(company_name_decoded)
+
+#         pipeline = []
+
+#         if match_filter:
+#             pipeline.append({ "$match": match_filter })
+
+#         # Lookup customers (customer_id is string)
+#         pipeline.append({
+#             "$lookup": {
+#                 "from": "adebeo_customers",
+#                 "let": { "cust_id_str": "$customer_id" },
+#                 "pipeline": [
+#                     {
+#                         "$match": {
+#                             "$expr": {
+#                                 "$eq": ["$_id", { "$toObjectId": "$$cust_id_str" }]
+#                             }
+#                         }
+#                     }
+#                 ],
+#                 "as": "customer"
+#             }
+#         })
+
+#         # Unwind customer array
+#         pipeline.append({
+#             "$unwind": {
+#                 "path": "$customer",
+#                 "preserveNullAndEmptyArrays": False
+#             }
+#         })
+
+#         # Optional company name filter
+#         if company_name_regex:
+#             pipeline.append({
+#                 "$match": {
+#                     "customer.companyName": {
+#                         "$regex": company_name_regex,
+#                         "$options": "i"
+#                     }
+#                 }
+#             })
+
+#         # Count total records
+#         count_pipeline = pipeline + [{ "$count": "total" }]
+#         count_result = list(db.adebeo_funnel.aggregate(count_pipeline))
+#         total_records = count_result[0]["total"] if count_result else 0
+#         total_pages = (total_records // limit) + (1 if total_records % limit else 0)
+
+#         # Pagination
+#         pipeline.extend([
+#             { "$skip": skip },
+#             { "$limit": limit }
+#         ])
+
+#         # Lookup comments
+#         pipeline.append({
+#             "$lookup": {
+#                 "from": "adebeo_customer_comments",
+#                 "let": { "customer_id_str": { "$toString": "$customer._id" } },
+#                 "pipeline": [
+#                     {
+#                         "$match": {
+#                             "$expr": { "$eq": ["$customer_id", "$$customer_id_str"] }
+#                         }
+#                     }
+#                 ],
+#                 "as": "comments"
+#             }
+#         })
+
+#         # Final projection — flatten customer and merge comments
+#         pipeline.append({
+#             "$replaceRoot": {
+#                 "newRoot": {
+#                     "$mergeObjects": ["$customer", { "comments": "$comments" }]
+#                 }
+#             }
+#         })
+
+#         # Execute final pipeline
+#         results = list(db.adebeo_funnel.aggregate(pipeline))
+
+#         # Convert ObjectIds to strings
+#         for r in results:
+#             r["_id"] = str(r["_id"])
+#             for comment in r.get("comments", []):
+#                 comment["_id"] = str(comment["_id"])
+#                 comment["customer_id"] = str(comment["customer_id"])
+
+#         # Return response
+#         return jsonify({
+#             "data": results,
+#             "limit": limit,
+#             "page": page,
+#             "total_pages": total_pages,
+#             "total_records": total_records
+#         })
+
+#     except Exception as e:
+#         return jsonify({ "message": "An error occurred", "error": str(e) }), 500
 
 
 
@@ -4016,6 +4192,7 @@ def update_customer_status_and_assignment():
         )
 
         # 3. If assigned_to provided, update assigned user in funnel collection
+        print(f"Customer ID from customer: {str(customer_id)}")
         if assigned_to:
             db.adebeo_funnel.update_one(
                 {"customer_id": str(customer_id)},
@@ -4032,6 +4209,7 @@ def update_customer_status_and_assignment():
     except Exception as e:
         logging.error(f"Error updating customer status and assignment: {str(e)}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
 ################### transfer assigned user 
 @app.route('/transfer_assigned_user', methods=['PUT'])
 @login_required
@@ -4310,7 +4488,6 @@ def get_adebeo_orders():
 #         print(f"Error: {str(e)}")
 #         return jsonify({"error": str(e)}), 500
 ##############################################################disable invoice or disable invoice and Purchase order
-
 @app.route('/disable_invoice/<invoice_id>', methods=['PUT'])
 @login_required
 def disable_invoice(invoice_id):
@@ -4321,14 +4498,14 @@ def disable_invoice(invoice_id):
             return jsonify({"error": "Access denied. Admin privileges are required."}), 403
 
         data = request.get_json()
-        if data is None:
+        if not data:
             return jsonify({"error": "Missing JSON body"}), 400
 
         is_enable_invoice_purchase = data.get("isEnableInvoicePurchase")
-        if is_enable_invoice_purchase is None or not isinstance(is_enable_invoice_purchase, bool):
-            return jsonify({"error": "Field 'isEnableInvoicePurchase' is required and must be boolean."}), 400
+        if not isinstance(is_enable_invoice_purchase, bool):
+            return jsonify({"error": "Field 'isEnableInvoicePurchase' is required and must be a boolean."}), 400
 
-        # Find invoice by ID
+        # Validate invoice
         invoice = invoice_collection.find_one({"_id": ObjectId(invoice_id)})
         if not invoice:
             return jsonify({"error": "Invoice not found."}), 404
@@ -4337,27 +4514,88 @@ def disable_invoice(invoice_id):
         if not proforma_id:
             return jsonify({"error": "Invoice missing proforma_id."}), 400
 
-        # Disable invoice
+        # Determine new status
+        new_status = "Disabled" if is_enable_invoice_purchase else "Cancelled"
+
+        # Update invoice
         invoice_collection.update_one(
             {"_id": ObjectId(invoice_id)},
-            {"$set": {"isEnabled": False,
-                        "payment_status":"Cancelled"}}
+            {
+                "$set": {
+                    "isEnabled": False,
+                    "payment_status": new_status
+                }
+            }
         )
 
-        # Disable purchase orders if required
+        # Optionally disable purchase orders
         if is_enable_invoice_purchase:
             adebeo_purchase_order_collection.update_many(
                 {"proforma_id": proforma_id},
-                {"$set": {"isEnabled": False,
-                            "status":"Cancelled"}}
+                {
+                    "$set": {
+                        "isEnabled": False,
+                        "status": "Disabled"
+                    }
+                }
             )
 
-        return jsonify({"message": "Invoice (and purchase orders if applicable) disabled successfully."}), 200
+        return jsonify({
+            "message": f"Invoice {'and purchase orders ' if is_enable_invoice_purchase else ''}disabled successfully."
+        }), 200
 
     except Exception as e:
         import logging
-        logging.error(f"Error disabling invoice and purchase orders: {e}")
-        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+        logging.exception("Error disabling invoice and purchase orders")
+        return jsonify({"error": "Internal Server Error"}), 500
+        
+# @app.route('/disable_invoice/<invoice_id>', methods=['PUT'])
+# @login_required
+# def disable_invoice(invoice_id):
+#     try:
+#         claims = get_jwt()
+#         user_role = claims.get("role")
+#         if user_role != "admin":
+#             return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#         data = request.get_json()
+#         if data is None:
+#             return jsonify({"error": "Missing JSON body"}), 400
+
+#         is_enable_invoice_purchase = data.get("isEnableInvoicePurchase")
+#         if is_enable_invoice_purchase is None or not isinstance(is_enable_invoice_purchase, bool):
+#             return jsonify({"error": "Field 'isEnableInvoicePurchase' is required and must be boolean."}), 400
+
+#         # Find invoice by ID
+#         invoice = invoice_collection.find_one({"_id": ObjectId(invoice_id)})
+#         if not invoice:
+#             return jsonify({"error": "Invoice not found."}), 404
+
+#         proforma_id = invoice.get("proforma_id")
+#         if not proforma_id:
+#             return jsonify({"error": "Invoice missing proforma_id."}), 400
+
+#         # Disable invoice
+#         invoice_collection.update_one(
+#             {"_id": ObjectId(invoice_id)},
+#             {"$set": {"isEnabled": False,
+#                         "payment_status":"Cancelled"}}
+#         )
+
+#         # Disable purchase orders if required
+#         if is_enable_invoice_purchase:
+#             adebeo_purchase_order_collection.update_many(
+#                 {"proforma_id": proforma_id},
+#                 {"$set": {"isEnabled": False,
+#                             "status":"Cancelled"}}
+#             )
+
+#         return jsonify({"message": "Invoice (and purchase orders if applicable) disabled successfully."}), 200
+
+#     except Exception as e:
+#         import logging
+#         logging.error(f"Error disabling invoice and purchase orders: {e}")
+#         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 
 ############################recreate cancelled Invoice ###############
 @app.route('/recreate_invoice/<cancelled_invoice_id>', methods=['POST'])
@@ -5102,20 +5340,17 @@ def get_activity_report():
     end_date = request.args.get('endDate', None)
     company_name = request.args.get('companyName', None)
     user = request.args.get('user', None)
-    page = int(request.args.get('page', 1))  # Default page 1
-    per_page = int(request.args.get('per_page', 10))  # Default per page 10
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 10))
+    report_type = request.args.get('reportType', 'detailed').lower()  # New param
 
-    # Debug: Print the received parameters
-    print(f"Received Parameters - Start Date: {start_date}, End Date: {end_date}, Company Name: {company_name}, User: {user}, Page: {page}, Per Page: {per_page}")
-    
-    # Validate per_page is positive
+    print(f"Received Parameters - Start Date: {start_date}, End Date: {end_date}, Company Name: {company_name}, User: {user}, Page: {page}, Per Page: {per_page}, Report Type: {report_type}")
+
     if per_page <= 0:
         return jsonify({"error": "'per_page' must be a positive number"}), 400
 
-    # Calculate skip value for pagination
     skip = (page - 1) * per_page
 
-    # If start date or end date is not provided, set default values for the current date
     if not start_date:
         start_date = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
     else:
@@ -5134,71 +5369,172 @@ def get_activity_report():
     if company_name:
         company_filter['company_name'] = company_name
 
-    # Debug: Print the final filters
-    print(f"Company Filter: {company_filter}, Start Date: {start_date}, End Date: {end_date}")
-
     try:
-        # Get filtered activities with pagination for each type of activity
-        comment_activity = get_comment_activity(company_filter, start_date, end_date, skip, per_page, user)
+        activities = []
+        total_count = 0
+
+        # Always include quote, proforma, and invoice
         quote_activity = get_quote_activity(company_filter, start_date, end_date, skip, per_page, user)
         proforma_activity = get_proforma_activity(company_filter, start_date, end_date, skip, per_page)
         invoice_activity = get_invoice_activity(company_filter, start_date, end_date, skip, per_page)
-        customer_activity = get_customer_activity(start_date, end_date, company_filter, skip, per_page)
 
-        # Debug: Print number of activities retrieved for each type
-        print(f"Fetched Activities: Comment: {len(comment_activity)}, Quote: {len(quote_activity)}, Proforma: {len(proforma_activity)}, Invoice: {len(invoice_activity)}, Customer: {len(customer_activity)}")
+        activities += quote_activity + proforma_activity + invoice_activity
 
-        # Merge all activities
-        activities = comment_activity + quote_activity + proforma_activity + invoice_activity + customer_activity
-
-        # Debug: Print total activities before sorting
-        print(f"Total Activities (before sorting): {len(activities)}")
-
-        # Sort activities by insertDate (timestamp)
+        # Sort and paginate
         activities = sorted(activities, key=lambda x: x['insertDate'], reverse=True)
 
-        # Debug: Print total activities after sorting
-        print(f"Total Activities (after sorting): {len(activities)}")
-
-        # Calculate total count for each collection and print them
-        comment_count = get_comment_activity_count(company_filter, start_date, end_date, user)
+        # Get counts
         quote_count = get_quote_activity_count(company_filter, start_date, end_date, user)
         proforma_count = get_proforma_activity_count(company_filter, start_date, end_date)
         invoice_count = get_invoice_activity_count(company_filter, start_date, end_date)
-        customer_count = get_customer_activity_count(company_filter, start_date, end_date)
 
-        # Debug: Print individual counts
-        print(f"Individual Counts - Comment: {comment_count}, Quote: {quote_count}, Proforma: {proforma_count}, Invoice: {invoice_count}, Customer: {customer_count}")
+        total_count = quote_count + proforma_count + invoice_count
 
-        # Total count is the sum of individual counts
-        total_count = comment_count + quote_count + proforma_count + invoice_count + customer_count
+        # Include detailed if requested
+        if report_type == 'detailed':
+            comment_activity = get_comment_activity(company_filter, start_date, end_date, skip, per_page, user)
+            customer_activity = get_customer_activity(start_date, end_date, company_filter, skip, per_page)
 
-        # Debug: Print total count
-        print(f"Total Count (after summing individual counts): {total_count}")
+            activities += comment_activity + customer_activity
+            activities = sorted(activities, key=lambda x: x['insertDate'], reverse=True)
 
-        # Calculate total pages based on the filtered total count
+            comment_count = get_comment_activity_count(company_filter, start_date, end_date, user)
+            customer_count = get_customer_activity_count(company_filter, start_date, end_date)
+
+            total_count += comment_count + customer_count
+        else:
+            comment_count = None
+            customer_count = None
+
         total_pages = (total_count + per_page - 1) // per_page
-
-        # Debug: Print total pages
-        print(f"Total Pages: {total_pages}")
-
-        # Apply pagination to the merged activities
         start_idx = (page - 1) * per_page
         end_idx = start_idx + per_page
         paginated_activities = activities[start_idx:end_idx]
 
-        # Return paginated response with metadata
-        return jsonify({
+        response = {
             "currentPage": page,
             "totalPages": total_pages,
             "totalCount": total_count,
+            "quoteCount": quote_count,
+            "proformaCount": proforma_count,
+            "invoiceCount": invoice_count,
             "activities": paginated_activities
-        })
+        }
+
+        if report_type == 'detailed':
+            response["commentCount"] = comment_count
+            response["customerCount"] = customer_count
+
+        return jsonify(response)
 
     except Exception as e:
-        # Debug: Print error message
         print(f"Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+# @app.route('/activity_report', methods=['GET'])
+# def get_activity_report():
+#     # Get parameters from the request
+#     start_date = request.args.get('startDate', None)
+#     end_date = request.args.get('endDate', None)
+#     company_name = request.args.get('companyName', None)
+#     user = request.args.get('user', None)
+#     page = int(request.args.get('page', 1))  # Default page 1
+#     per_page = int(request.args.get('per_page', 10))  # Default per page 10
+
+#     # Debug: Print the received parameters
+#     print(f"Received Parameters - Start Date: {start_date}, End Date: {end_date}, Company Name: {company_name}, User: {user}, Page: {page}, Per Page: {per_page}")
+    
+#     # Validate per_page is positive
+#     if per_page <= 0:
+#         return jsonify({"error": "'per_page' must be a positive number"}), 400
+
+#     # Calculate skip value for pagination
+#     skip = (page - 1) * per_page
+
+#     # If start date or end date is not provided, set default values for the current date
+#     if not start_date:
+#         start_date = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
+#     else:
+#         if 'T' not in start_date:
+#             start_date += 'T00:00:00'
+#         start_date = datetime.fromisoformat(start_date)
+
+#     if not end_date:
+#         end_date = datetime.today().replace(hour=23, minute=59, second=59, microsecond=999999)
+#     else:
+#         if 'T' not in end_date:
+#             end_date += 'T23:59:59'
+#         end_date = datetime.fromisoformat(end_date)
+
+#     company_filter = {}
+#     if company_name:
+#         company_filter['company_name'] = company_name
+
+#     # Debug: Print the final filters
+#     print(f"Company Filter: {company_filter}, Start Date: {start_date}, End Date: {end_date}")
+
+#     try:
+#         # Get filtered activities with pagination for each type of activity
+#         comment_activity = get_comment_activity(company_filter, start_date, end_date, skip, per_page, user)
+#         quote_activity = get_quote_activity(company_filter, start_date, end_date, skip, per_page, user)
+#         proforma_activity = get_proforma_activity(company_filter, start_date, end_date, skip, per_page)
+#         invoice_activity = get_invoice_activity(company_filter, start_date, end_date, skip, per_page)
+#         customer_activity = get_customer_activity(start_date, end_date, company_filter, skip, per_page)
+
+#         # Debug: Print number of activities retrieved for each type
+#         print(f"Fetched Activities: Comment: {len(comment_activity)}, Quote: {len(quote_activity)}, Proforma: {len(proforma_activity)}, Invoice: {len(invoice_activity)}, Customer: {len(customer_activity)}")
+
+#         # Merge all activities
+#         activities = comment_activity + quote_activity + proforma_activity + invoice_activity + customer_activity
+
+#         # Debug: Print total activities before sorting
+#         print(f"Total Activities (before sorting): {len(activities)}")
+
+#         # Sort activities by insertDate (timestamp)
+#         activities = sorted(activities, key=lambda x: x['insertDate'], reverse=True)
+
+#         # Debug: Print total activities after sorting
+#         print(f"Total Activities (after sorting): {len(activities)}")
+
+#         # Calculate total count for each collection and print them
+#         comment_count = get_comment_activity_count(company_filter, start_date, end_date, user)
+#         quote_count = get_quote_activity_count(company_filter, start_date, end_date, user)
+#         proforma_count = get_proforma_activity_count(company_filter, start_date, end_date)
+#         invoice_count = get_invoice_activity_count(company_filter, start_date, end_date)
+#         customer_count = get_customer_activity_count(company_filter, start_date, end_date)
+
+#         # Debug: Print individual counts
+#         print(f"Individual Counts - Comment: {comment_count}, Quote: {quote_count}, Proforma: {proforma_count}, Invoice: {invoice_count}, Customer: {customer_count}")
+
+#         # Total count is the sum of individual counts
+#         total_count = comment_count + quote_count + proforma_count + invoice_count + customer_count
+
+#         # Debug: Print total count
+#         print(f"Total Count (after summing individual counts): {total_count}")
+
+#         # Calculate total pages based on the filtered total count
+#         total_pages = (total_count + per_page - 1) // per_page
+
+#         # Debug: Print total pages
+#         print(f"Total Pages: {total_pages}")
+
+#         # Apply pagination to the merged activities
+#         start_idx = (page - 1) * per_page
+#         end_idx = start_idx + per_page
+#         paginated_activities = activities[start_idx:end_idx]
+
+#         # Return paginated response with metadata
+#         return jsonify({
+#             "currentPage": page,
+#             "totalPages": total_pages,
+#             "totalCount": total_count,
+#             "activities": paginated_activities
+#         })
+
+#     except Exception as e:
+#         # Debug: Print error message
+#         print(f"Error: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
 
 
 
