@@ -1063,50 +1063,107 @@ def update_combo_product(combo_code):
 @login_required
 def getAll_adebeo_products():
     try:
-        # Fetch all enabled products
+        # Step 1: Fetch enabled categories
+        enabled_categories = list(db['adebeo_product_categories'].find({"isEnabled": True}))
+        category_map = {c["Category_Code"]: c for c in enabled_categories}
+        enabled_category_codes = set(category_map.keys())
+
+        # Step 2: Fetch only enabled products
         products_cursor = db['adebeo_products'].find({"prodisEnabled": True})
-        products = list(products_cursor)
-        products = convert_objectid_to_str(products)
+        all_products = list(products_cursor)
 
-        # Fetch all enabled categories
-        categories = list(db['adebeo_product_categories'].find({"isEnabled": True}))
-        category_map = {c["Category_Code"]: c for c in categories}
+        filtered_products = []
+        for product in all_products:
+            cat_code = product.get("categoryCode")
 
-        for product in products:
-            # Ensure categoryCode field is present (for frontend)
-            product["categoryCode"] = product.get("categoryCode") #or product.get("Category_Code") or "default"
-
-            # Remove old Category_Code from top level if present
-            #product.pop("Category_Code", None)
-
-            # Attach category info
-            cat_code = product["categoryCode"]
-            category = category_map.get(cat_code)
-
-            if not category:
-                category = {
-                    "Category_Name": "Unknown",
-                    "Category_Code": "unknown",
-                    "Category_description": "No matching category found"
+            # Case 1: No categoryCode → assign to default
+            if not cat_code:
+                product["categoryCode"] = "default"
+                product["category_info"] = {
+                    "Category_Name": "Default",
+                    "Category_Code": "default",
+                    "Category_description": "Uncategorized product"
                 }
 
-            product["category_info"] = {
-                "Category_Name": category["Category_Name"],
-                "Category_Code": category["Category_Code"],
-                "Category_description": category["Category_description"]
-            }
+            # Case 2: category exists and is enabled → attach its info
+            elif cat_code in enabled_category_codes:
+                category = category_map[cat_code]
+                product["category_info"] = {
+                    "Category_Name": category["Category_Name"],
+                    "Category_Code": category["Category_Code"],
+                    "Category_description": category.get("Category_description", "")
+                }
 
-            # Ensure new fields exist with defaults
+            # Case 3: category is disabled or invalid → skip this product
+            else:
+                continue
+
+            # Ensure product fields have sane defaults
             product["type"] = product.get("type", "product")
             product["isUSD"] = product.get("isUSD", False)
             product["priceUSD"] = product.get("priceUSD", "0")
             product["priceINR"] = product.get("priceINR", "0")
 
-        return jsonify({"data": products, "total": len(products)})
+            # Convert ObjectId to string if needed
+            product = convert_objectid_to_str(product)
+
+            filtered_products.append(product)
+
+        return jsonify({"data": filtered_products, "total": len(filtered_products)})
 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
+
+# @app.route("/getall_adebeo_products", methods=["GET"])
+# @login_required
+# def getAll_adebeo_products():
+#     try:
+#         # Fetch all enabled products
+#         products_cursor = db['adebeo_products'].find({"prodisEnabled": True})
+#         products = list(products_cursor)
+#         products = convert_objectid_to_str(products)
+
+#         # Fetch all enabled categories
+#         categories = list(db['adebeo_product_categories'].find({"isEnabled": True}))
+#         category_map = {c["Category_Code"]: c for c in categories}
+
+#         for product in products:
+#             # Ensure categoryCode field is present (for frontend)
+#             product["categoryCode"] = product.get("categoryCode") #or product.get("Category_Code") or "default"
+
+#             # Remove old Category_Code from top level if present
+#             #product.pop("Category_Code", None)
+
+#             # Attach category info
+#             cat_code = product["categoryCode"]
+#             category = category_map.get(cat_code)
+
+#             if not category:
+#                 category = {
+#                     "Category_Name": "Unknown",
+#                     "Category_Code": "unknown",
+#                     "Category_description": "No matching category found"
+#                 }
+
+#             product["category_info"] = {
+#                 "Category_Name": category["Category_Name"],
+#                 "Category_Code": category["Category_Code"],
+#                 "Category_description": category["Category_description"]
+#             }
+
+#             # Ensure new fields exist with defaults
+#             product["type"] = product.get("type", "product")
+#             product["isUSD"] = product.get("isUSD", False)
+#             product["priceUSD"] = product.get("priceUSD", "0")
+#             product["priceINR"] = product.get("priceINR", "0")
+
+#         return jsonify({"data": products, "total": len(products)})
+
+#     except Exception as e:
+#         print(f"Error occurred: {str(e)}")
+#         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
 
 #update Category
@@ -1242,19 +1299,24 @@ def list_categories():
     claims = get_jwt()
     user_role = claims.get("role")
 
-    # For listing categories, you might want to allow all logged-in users or restrict by role
-    # Adjust the role check accordingly, here I allow any logged-in user:
-    # if user_role not in ["admin", "user"]:
-    #     return jsonify({"error": "Access denied."}), 403
-
     search_name = request.args.get("name", "").strip()
+    include_disabled = request.args.get("includeDisabled", "false").lower() == "true"
 
-    query = {"isEnabled": True}  # only enabled categories by default
+    # Optional: Only allow admins to fetch disabled categories
+    if include_disabled and user_role != "admin":
+        return jsonify({"error": "Only admins can view disabled categories."}), 403
 
+    query = {}
+
+    # Show only enabled categories by default
+    if not include_disabled:
+        query["isEnabled"] = True
+
+    # Optional case-insensitive search by name
     if search_name:
-        # Case-insensitive search for editing
         query["Category_Name"] = {"$regex": search_name, "$options": "i"}
 
+    # Fetch categories, excluding MongoDB _id field
     categories = list(adebeo_categories_collection.find(query, {"_id": 0}))
 
     return jsonify(categories), 200
@@ -4941,7 +5003,7 @@ def process_payment():
             return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
 
         # Calculate payment status based on remaining amount
-        new_status = "completed" if remaining_amount <= 0 else "inprog"
+        new_status = "Completed" if remaining_amount <= 0 else "Inprog"
 
        # Convert dates to datetime objects (if necessary)
         if invoice_date:
@@ -4992,6 +5054,7 @@ def process_payment():
                 {
                     "$set": {
                         "amount_due": new_pending_due,  # Update the pending due amount
+                        "payment_status": new_status,
                         "updated_at": datetime.utcnow(),  # Set the updated timestamp
                     }
                 }
