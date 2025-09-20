@@ -891,6 +891,7 @@ def add_combo_product():
         combo_code = safe_strip(data.get("comboCode", ""))
         combo_name = safe_strip(data.get("comboDisplayName", ""))
         sales_code = safe_strip(data.get("salesCode", ""))
+        isEnabled = safe_strip(data.get("prodisEnabled", ""))
 
         sales_cost = data.get("salesCost")
         max_discount = data.get("maxDiscount")
@@ -948,7 +949,8 @@ def add_combo_product():
             "createdBy": username,
             "createdAt": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"),
             "modifiedBy": None,
-            "modifiedAt": None
+            "modifiedAt": None,
+            "isEnabled": isEnabled
         }
 
         db.adebeo_combo_products.insert_one(combo_product)
@@ -966,8 +968,15 @@ def add_combo_product():
 def get_combo_products():
     try:
         search_name = request.args.get("name", "").strip()
+        include_disabled = request.args.get("includeDisabled", "false").lower() == "true"
 
         query = {}
+
+        # Apply isEnabled filter if not including disabled
+        if not include_disabled:
+            query["isEnabled"] = True
+
+        # Optional search filter
         if search_name:
             query["comboDisplayName"] = {
                 "$regex": search_name,
@@ -989,6 +998,35 @@ def get_combo_products():
         print(f"Error fetching combo products: {str(e)}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
+# @app.route("/getComboProducts", methods=["GET"])
+# @login_required
+# @jwt_required()
+# def get_combo_products():
+#     try:
+#         search_name = request.args.get("name", "").strip()
+
+#         query = {}
+#         if search_name:
+#             query["comboDisplayName"] = {
+#                 "$regex": search_name,
+#                 "$options": "i"  # Case-insensitive
+#             }
+
+#         combos_cursor = db.adebeo_combo_products.find(query)
+#         combos = []
+
+#         for combo in combos_cursor:
+#             combo["_id"] = str(combo["_id"])
+#             for product in combo.get("products", []):
+#                 product["productId"] = str(product["productId"])
+#             combos.append(combo)
+
+#         return jsonify({"data": combos, "total": len(combos)})
+
+#     except Exception as e:
+#         print(f"Error fetching combo products: {str(e)}")
+#         return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
 # route ro update combo product
 @app.route("/updateComboProduct/<combo_code>", methods=["PUT"])
 @login_required
@@ -1009,6 +1047,7 @@ def update_combo_product(combo_code):
         sales_cost = data.get("salesCost", "").strip()
         max_discount = data.get("maxDiscount", "").strip()
         products = data.get("products", [])
+        isEnabled = data.get("prodisEnabled", "")
 
         if not combo_name or not sales_code or not sales_cost or not products:
             return jsonify({"error": "Missing required fields"}), 400
@@ -1041,6 +1080,7 @@ def update_combo_product(combo_code):
             "maxDiscount": max_discount,
             "products": final_products,
             "modifiedBy": username,
+            "isEnabled": isEnabled,
             "modifiedAt": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
         }
 
