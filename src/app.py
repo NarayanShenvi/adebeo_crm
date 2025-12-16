@@ -5787,6 +5787,97 @@ def current_adebeo_users():
 #     except Exception as e:
 #         return jsonify({"error": str(e)}), 500
 
+@app.route('/sales_report', methods=['GET'])
+@jwt_required()
+def get_sales_report():
+    # --- Admin check ---
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    # --- Parse query params ---
+    start_date_str = request.args.get('startDate')
+    end_date_str = request.args.get('endDate')
+
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+    except ValueError:
+        return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
+
+    page = max(page, 1)
+    per_page = max(per_page, 1)
+
+    # --- Parse dates ---
+    today = datetime.today()
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else today.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else today.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    # --- Optional customer filter ---
+    customer_name_filter = request.args.get('customerName')
+    match_filter = {"invoice_date": {"$gte": start_date, "$lte": end_date}}
+    if customer_name_filter:
+        match_filter["customer_name"] = {"$regex": customer_name_filter.strip(), "$options": "i"}
+
+    try:
+        # --- Aggregation pipeline ---
+        pipeline = [
+            {"$match": match_filter},
+            {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},  # ensures one row per item
+            {"$project": {
+                "invoice_number": 1,
+                "invoice_date": 1,
+                "customer_name": 1,
+                "po_number": 1,
+                "description": "$items.description",
+                "product": "$items.productCode",  # use correct field
+                "quantity": "$items.quantity",
+                "amount_billed": "$items.sub_total"
+            }},
+            {"$sort": {"invoice_date": -1}}
+        ]
+
+        results = list(adebeo_invoice_collection.aggregate(pipeline))
+
+        # --- Format results ---
+        formatted_results = []
+        for item in results:
+            formatted_item = {
+                "_id": str(item.get("_id")),
+                "Invoice #": item.get("invoice_number"),
+                "Invoice Date": item.get("invoice_date").strftime("%Y-%m-%d") if item.get("invoice_date") else None,
+                "Customer Name": item.get("customer_name"),
+                "PO Number": item.get("po_number"),
+                "Description": item.get("description"),
+                "Product": item.get("product") or "N/A",
+            }
+
+            # Ensure quantity is integer
+            try:
+                formatted_item["Qty"] = int(item.get("quantity", 0))
+            except:
+                formatted_item["Qty"] = 0
+
+            formatted_item["Amount Billed (INR)"] = item.get("amount_billed", 0)
+
+            formatted_results.append(formatted_item)
+
+        # --- Pagination ---
+        total_count = len(formatted_results)
+        total_pages = (total_count + per_page - 1) // per_page
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_results = formatted_results[start_idx:end_idx]
+
+        return jsonify({
+            "sales": paginated_results,
+            "currentPage": page,
+            "totalCount": total_count,
+            "totalPages": total_pages
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 #if __name__ == "__main__":
