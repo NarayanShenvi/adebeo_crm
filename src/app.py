@@ -5880,6 +5880,110 @@ def get_sales_report():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/purchase_report', methods=['GET'])
+@jwt_required()
+def get_purchase_report():
+
+    # --- Admin check ---
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    # --- Parse query params ---
+    start_date_str = request.args.get('startDate')
+    end_date_str = request.args.get('endDate')
+    vendor_name_filter = request.args.get('vendorName')
+
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+    except ValueError:
+        return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
+
+    page = max(page, 1)
+    per_page = max(per_page, 1)
+
+    # --- Parse dates ---
+    today = datetime.today()
+    start_date = (
+        datetime.strptime(start_date_str, "%Y-%m-%d")
+        if start_date_str else today.replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    end_date = (
+        datetime.strptime(end_date_str, "%Y-%m-%d")
+        if end_date_str else today.replace(hour=23, minute=59, second=59, microsecond=999999)
+    )
+
+    # --- Match filter ---
+    match_filter = {
+        "date": {"$gte": start_date, "$lte": end_date}
+    }
+
+    if vendor_name_filter:
+        match_filter["vendor"] = {
+            "$regex": vendor_name_filter.strip(),
+            "$options": "i"
+        }
+
+    try:
+        # --- Aggregation pipeline ---
+        pipeline = [
+            {"$match": match_filter},
+            {"$project": {
+                "po_number": 1,
+                "date": 1,
+                "vendor": 1,
+                "product_name": 1,
+                "quantity": 1,
+                "purchase_price": 1,
+                "tax_amount": 1,
+                "total_amount": 1,
+                "mode": 1,
+                "business_type": 1,
+                "status": 1
+            }},
+            {"$sort": {"date": -1}}
+        ]
+
+        results = list(adebeo_purchase_order_collection.aggregate(pipeline))
+
+        # --- Format results ---
+        formatted_results = []
+        for item in results:
+            formatted_results.append({
+                "_id": str(item.get("_id")),
+                "PO Number": item.get("po_number"),
+                "Purchase Date": item.get("date").strftime("%Y-%m-%d") if item.get("date") else None,
+                "Vendor Name": item.get("vendor"),
+                "Product": item.get("product_name"),
+                "Qty": int(item.get("quantity", 0)),
+                "Purchase Price (INR)": item.get("purchase_price", 0),
+                "Tax Amount (INR)": item.get("tax_amount", 0),
+                "Total Amount (INR)": item.get("total_amount", 0),
+                "Mode": item.get("mode"),
+                "Business Type": item.get("business_type"),
+                "Status": item.get("status")
+            })
+
+        # --- Pagination ---
+        total_count = len(formatted_results)
+        total_pages = (total_count + per_page - 1) // per_page
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+
+        paginated_results = formatted_results[start_idx:end_idx]
+
+        return jsonify({
+            "purchases": paginated_results,
+            "currentPage": page,
+            "totalCount": total_count,
+            "totalPages": total_pages
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 #if __name__ == "__main__":
 #    app.run(debug=True)
 if __name__ == "__main__":
