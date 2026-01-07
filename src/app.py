@@ -2526,10 +2526,12 @@ def create_performa():
 
             if is_combo:
                 combo_code = item.get("product_id")
+                comb_prod_sub_total = item.get("sub_total")
                 combo = adebeo_combo_products.find_one({"comboCode": combo_code})
                 if not combo:
                     return jsonify({"error": f"Combo not found: {combo_code}"}), 404
 
+                product_sub_total = 0
                 for child in combo.get("products", []):
                     product_id = child.get("productId")
 
@@ -2548,6 +2550,7 @@ def create_performa():
                     quantity = int(item.get("quantity", 1)) * int(child.get("quantity", 1))
                     unit_price = float(product.get("salesCost", 0))
                     sub_total = unit_price * quantity
+                    product_sub_total = sub_total+product_sub_total
 
                     processed_items.append({
                         "product_id": str(product["_id"]),
@@ -2561,6 +2564,7 @@ def create_performa():
                         "dr_status": "",
                         "isCombo": False
                     })
+                overall_discount = (product_sub_total - comb_prod_sub_total)
             else:
                 # ✅ Handle non-combo item and check type
                 product_id = item.get("product_id")
@@ -5787,6 +5791,98 @@ def current_adebeo_users():
 #     except Exception as e:
 #         return jsonify({"error": str(e)}), 500
 
+# @app.route('/sales_report', methods=['GET'])
+# @jwt_required()
+# def get_sales_report():
+#     # --- Admin check ---
+#     claims = get_jwt()
+#     if claims.get("role") != "admin":
+#         return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+#     # --- Parse query params ---
+#     start_date_str = request.args.get('startDate')
+#     end_date_str = request.args.get('endDate')
+
+#     try:
+#         page = int(request.args.get('page', 1))
+#         per_page = int(request.args.get('per_page', 300))
+#     except ValueError:
+#         return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
+
+#     page = max(page, 1)
+#     per_page = max(per_page, 1)
+
+#     # --- Parse dates ---
+#     today = datetime.today()
+#     start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else today.replace(hour=0, minute=0, second=0, microsecond=0)
+#     end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else today.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+#     # --- Optional customer filter ---
+#     customer_name_filter = request.args.get('customerName')
+#     match_filter = {"invoice_date": {"$gte": start_date, "$lte": end_date}}
+#     if customer_name_filter:
+#         match_filter["customer_name"] = {"$regex": customer_name_filter.strip(), "$options": "i"}
+
+#     try:
+#         # --- Aggregation pipeline ---
+#         pipeline = [
+#             {"$match": match_filter},
+#             {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},  # ensures one row per item
+#             {"$project": {
+#                 "invoice_number": 1,
+#                 "invoice_date": 1,
+#                 "customer_name": 1,
+#                 "po_number": 1,
+#                 "description": "$items.description",
+#                 "product": "$items.productCode",  # use correct field
+#                 "quantity": "$items.quantity",
+#                 "amount_billed": "$items.sub_total"
+#             }},
+#             {"$sort": {"invoice_date": -1}}
+#         ]
+
+#         results = list(adebeo_invoice_collection.aggregate(pipeline))
+
+#         # --- Format results ---
+#         formatted_results = []
+#         for item in results:
+#             formatted_item = {
+#                 "_id": str(item.get("_id")),
+#                 "Invoice #": item.get("invoice_number"),
+#                 "Invoice Date": item.get("invoice_date").strftime("%Y-%m-%d") if item.get("invoice_date") else None,
+#                 "Customer Name": item.get("customer_name"),
+#                 "PO Number": item.get("po_number"),
+#                 "Description": item.get("description"),
+#                 "Product": item.get("product") or "N/A",
+#             }
+
+#             # Ensure quantity is integer
+#             try:
+#                 formatted_item["Qty"] = int(item.get("quantity", 0))
+#             except:
+#                 formatted_item["Qty"] = 0
+
+#             formatted_item["Amount Billed (INR)"] = item.get("amount_billed", 0)
+
+#             formatted_results.append(formatted_item)
+
+#         # --- Pagination ---
+#         total_count = len(formatted_results)
+#         total_pages = (total_count + per_page - 1) // per_page
+#         start_idx = (page - 1) * per_page
+#         end_idx = start_idx + per_page
+#         paginated_results = formatted_results[start_idx:end_idx]
+
+#         return jsonify({
+#             "sales": paginated_results,
+#             "currentPage": page,
+#             "totalCount": total_count,
+#             "totalPages": total_pages
+#         })
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
 @app.route('/sales_report', methods=['GET'])
 @jwt_required()
 def get_sales_report():
@@ -5801,7 +5897,7 @@ def get_sales_report():
 
     try:
         page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
+        per_page = int(request.args.get('per_page', 300))
     except ValueError:
         return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
 
@@ -5810,55 +5906,114 @@ def get_sales_report():
 
     # --- Parse dates ---
     today = datetime.today()
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else today.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else today.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_date = (
+        datetime.strptime(start_date_str, "%Y-%m-%d")
+        if start_date_str
+        else today.replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    end_date = (
+        datetime.strptime(end_date_str, "%Y-%m-%d")
+        if end_date_str
+        else today.replace(hour=23, minute=59, second=59, microsecond=999999)
+    )
 
     # --- Optional customer filter ---
     customer_name_filter = request.args.get('customerName')
     match_filter = {"invoice_date": {"$gte": start_date, "$lte": end_date}}
+
     if customer_name_filter:
-        match_filter["customer_name"] = {"$regex": customer_name_filter.strip(), "$options": "i"}
+        match_filter["customer_name"] = {
+            "$regex": customer_name_filter.strip(),
+            "$options": "i"
+        }
 
     try:
         # --- Aggregation pipeline ---
         pipeline = [
             {"$match": match_filter},
-            {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},  # ensures one row per item
-            {"$project": {
-                "invoice_number": 1,
-                "invoice_date": 1,
-                "customer_name": 1,
-                "po_number": 1,
-                "description": "$items.description",
-                "product": "$items.productCode",  # use correct field
-                "quantity": "$items.quantity",
-                "amount_billed": "$items.sub_total"
-            }},
-            {"$sort": {"invoice_date": -1}}
+
+            {
+                "$unwind": {
+                    "path": "$items",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+
+            # 🔗 JOIN WITH PURCHASE ORDER COLLECTION
+            {
+                "$lookup": {
+                    "from": "adebeo_purchaseOrders",  # 👈 collection name
+                    "localField": "po_number",
+                    "foreignField": "po_number",
+                    "as": "po_data"
+                }
+            },
+
+            # Flatten PO data (if exists)
+            {
+                "$unwind": {
+                    "path": "$po_data",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+
+            {
+                "$project": {
+                    "invoice_number": 1,
+                    "invoice_date": 1,
+                    "customer_name": 1,
+                    "po_number": 1,
+                    "payment_status": 1,
+
+                    # Invoice item fields
+                    "description": "$items.description",
+                    "product": "$items.productCode",
+                    "quantity": "$items.quantity",
+                    "amount_billed": "$items.sub_total",
+
+                    # ✅ Fields from PO collection
+                    "mode": "$po_data.mode",
+                    "business_type": "$po_data.business_type"
+                }
+            },
+
+            # Oldest → newest (latest at end)
+            {"$sort": {"invoice_date": 1}}
         ]
+
 
         results = list(adebeo_invoice_collection.aggregate(pipeline))
 
         # --- Format results ---
         formatted_results = []
+
         for item in results:
+            base_amount = item.get("amount_billed", 0) or 0
+            status = (item.get("payment_status") or "").lower()
+
+            # Zero amount for cancelled / disabled invoices
+            if status in ["cancelled", "disabled"]:
+                final_amount = 0
+            else:
+                # Add 18% GST
+                final_amount = round(base_amount * 1.18, 0)
+
             formatted_item = {
                 "_id": str(item.get("_id")),
                 "Invoice #": item.get("invoice_number"),
-                "Invoice Date": item.get("invoice_date").strftime("%Y-%m-%d") if item.get("invoice_date") else None,
+                "Invoice Date": item.get("invoice_date").strftime("%Y-%m-%d")
+                if item.get("invoice_date") else None,
                 "Customer Name": item.get("customer_name"),
                 "PO Number": item.get("po_number"),
+                "Mode": item.get("mode") or "N/A",               # ✅ NEW
+                "Business Type": item.get("business_type") or "N/A",  # ✅ NEW
                 "Description": item.get("description"),
                 "Product": item.get("product") or "N/A",
+                "Qty": int(item.get("quantity") or 0),
+                #"Tax (18%)": tax_amount,
+                "Amount Billed (INR)": final_amount
             }
 
-            # Ensure quantity is integer
-            try:
-                formatted_item["Qty"] = int(item.get("quantity", 0))
-            except:
-                formatted_item["Qty"] = 0
-
-            formatted_item["Amount Billed (INR)"] = item.get("amount_billed", 0)
 
             formatted_results.append(formatted_item)
 
@@ -5983,6 +6138,119 @@ def get_purchase_report():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/business_report', methods=['GET'])
+@jwt_required()
+def get_business_report():
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied"}), 403
+
+    start_date_str = request.args.get("startDate")
+    end_date_str = request.args.get("endDate")
+
+    today = datetime.today()
+    start_date = (
+        datetime.strptime(start_date_str, "%Y-%m-%d")
+        if start_date_str else today.replace(hour=0, minute=0, second=0)
+    )
+    end_date = (
+        datetime.strptime(end_date_str, "%Y-%m-%d")
+        if end_date_str else today.replace(hour=23, minute=59, second=59)
+    )
+
+    match_filter = {"invoice_date": {"$gte": start_date, "$lte": end_date}}
+
+    try:
+        pipeline = [
+            {"$match": match_filter},
+
+            {"$unwind": "$items"},
+
+            # Join purchase orders
+            {
+                "$lookup": {
+                    "from": "adebeo_purchaseOrders",
+                    "localField": "po_number",
+                    "foreignField": "po_number",
+                    "as": "po_data"
+                }
+            },
+            {
+                "$unwind": {
+                    "path": "$po_data",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+
+           {
+                "$project": {
+                    "invoice_number": 1,
+                    "invoice_date": 1,
+                    "customer_name": 1,
+                    "po_number": 1,
+
+                    # SALES (ITEM LEVEL)
+                    "product_code": "$items.productCode",
+                    "product_description": "$items.description",
+                    "sale_base": "$items.sub_total",
+
+                    # PURCHASE
+                    "purchase_total": "$po_data.total_amount",
+
+                    "mode": "$po_data.mode",
+                    "business_type": "$po_data.business_type"
+                }
+            },
+
+            {"$sort": {"invoice_date": 1}}
+        ]
+
+        results = list(adebeo_invoice_collection.aggregate(pipeline))
+
+        report = []
+
+        for row in results:
+            sale_base = row.get("sale_base", 0) or 0
+
+            # SALE incl GST
+            sale_tax = round(sale_base * 0.18)
+            sale_total = sale_base + sale_tax
+
+            purchase_total = row.get("purchase_total") or 0
+
+            profit = round(sale_total - purchase_total, 2)
+
+            profit_pct = (
+                round((profit / purchase_total) * 100, 2)
+                if purchase_total else None
+            )
+
+            report.append({
+                "Invoice #": row.get("invoice_number"),
+                "Invoice Date": row.get("invoice_date").strftime("%Y-%m-%d"),
+                "Customer": row.get("customer_name"),
+                "PO Number": row.get("po_number"),
+
+                # ✅ PRODUCT INFO
+                "Product Code": row.get("product_code") or "N/A",
+                "Product Description": row.get("product_description") or "N/A",
+
+                "Mode": row.get("mode") or "N/A",
+                "Business Type": row.get("business_type") or "N/A",
+
+                "Sale Amount (INR)": sale_total,
+                "Purchase Cost (INR)": purchase_total,
+                "Profit (INR)": profit,
+                "Profit %": profit_pct
+            })
+
+        return jsonify({
+            "businessReport": report,
+            "totalCount": len(report)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 #if __name__ == "__main__":
 #    app.run(debug=True)
