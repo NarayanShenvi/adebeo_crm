@@ -171,6 +171,31 @@ def add_user():
     # })
     # return jsonify(id=str(user.inserted_id), message="user created sucessfully.")
 
+@app.route("/change-password", methods=["POST"])
+def change_password():
+    data = request.json
+    username = data["username"].lower()
+    old_password = data["old_password"]
+    new_password = data["new_password"]
+
+    user = adebeo_users_collection.find_one({"username": username})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Verify old password
+    if not bcrypt.check_password_hash(user["password"], old_password):
+        return jsonify({"error": "Old password is incorrect"}), 401
+
+    # Hash new password
+    hashed_password = bcrypt.generate_password_hash(new_password).decode("utf-8")
+
+    adebeo_users_collection.update_one(
+        {"username": username},
+        {"$set": {"password": hashed_password}}
+    )
+
+    return jsonify({"message": "Password changed successfully"}), 200
+
 # adebeo Login route
 @app.route('/login', methods=['POST'])
 def login():
@@ -273,17 +298,13 @@ def get_funnel_users():
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 10))
-        company_name = request.args.get('companyName', None)
+        search = request.args.get('search', None)
+        search_type = request.args.get('searchType', 'company')  # default
         skip = (page - 1) * limit
 
         match_filter = {}
         if user_role not in ['admin', 'tech']:
             match_filter["assigned_to"] = username
-
-        company_name_regex = None
-        if company_name:
-            company_name_decoded = unquote(company_name).strip()
-            company_name_regex = re.escape(company_name_decoded)
 
         pipeline = []
 
@@ -315,21 +336,53 @@ def get_funnel_users():
             }
         })
 
-        # Optional company name filter
-        if company_name_regex:
-            pipeline.append({
-                "$match": {
-                    "customer.companyName": {
-                        "$regex": company_name_regex,
-                        "$options": "i"
+        # 🔍 SEARCH LOGIC (DEFAULT: COMPANY)
+        if search:
+            search_decoded = unquote(search).strip()
+            escaped = re.escape(search_decoded)
+
+            if search_type == "company":
+                pipeline.append({
+                    "$match": {
+                        "customer.companyName": {
+                            "$regex": escaped,
+                            "$options": "i"
+                        }
                     }
-                }
-            })
+                })
+
+            elif search_type == "area":
+                prefix = escaped[:5]  # first 4–5 chars
+
+                pipeline.append({
+                    "$match": {
+                        "$or": [
+                            {
+                                "customer.area": {
+                                    "$regex": prefix,
+                                    "$options": "i"
+                                }
+                            },
+                            {
+                                "customer.subArea": {
+                                    "$regex": prefix,
+                                    "$options": "i"
+                                }
+                            },
+                            {
+                                "customer.address": {
+                                    "$regex": prefix,
+                                    "$options": "i"
+                                }
+                            }
+                        ]
+                    }
+                })
 
         # Lookup products
         pipeline.append({
             "$lookup": {
-                "from": "adebeo_products",  # Adjust collection name if needed
+                "from": "adebeo_products",
                 "let": { "product_ids_str": "$customer.products" },
                 "pipeline": [
                     {
@@ -383,7 +436,7 @@ def get_funnel_users():
             }
         })
 
-        # Final projection: merge customer + comments + products
+        # Final projection
         pipeline.append({
             "$replaceRoot": {
                 "newRoot": {
@@ -402,10 +455,9 @@ def get_funnel_users():
             }
         })
 
-        # Execute pipeline
         results = list(db.adebeo_funnel.aggregate(pipeline))
 
-        # Post-processing: convert IDs to strings, add fallback for missing products
+        # Post-processing
         for r in results:
             r["_id"] = str(r["_id"])
 
@@ -413,7 +465,6 @@ def get_funnel_users():
                 comment["_id"] = str(comment["_id"])
                 comment["customer_id"] = str(comment["customer_id"])
 
-            # If products are missing or empty, inject fallback
             if not r.get("products"):
                 r["products"] = [{
                     "productCode": "NA",
@@ -424,7 +475,6 @@ def get_funnel_users():
                 for product in r["products"]:
                     product["_id"] = str(product["_id"])
 
-        # Return final response
         return jsonify({
             "data": results,
             "limit": limit,
@@ -434,7 +484,183 @@ def get_funnel_users():
         })
 
     except Exception as e:
-        return jsonify({ "message": "An error occurred", "error": str(e) }), 500
+        return jsonify({
+            "message": "An error occurred",
+            "error": str(e)
+        }), 500
+
+# @app.route("/funnel_users", methods=["GET"])
+# @login_required
+# def get_funnel_users():
+#     username = request.user
+#     claims = get_jwt()
+#     user_role = claims.get("role")
+
+#     try:
+#         page = int(request.args.get('page', 1))
+#         limit = int(request.args.get('limit', 10))
+#         company_name = request.args.get('companyName', None)
+#         skip = (page - 1) * limit
+
+#         match_filter = {}
+#         if user_role not in ['admin', 'tech']:
+#             match_filter["assigned_to"] = username
+
+#         company_name_regex = None
+#         if company_name:
+#             company_name_decoded = unquote(company_name).strip()
+#             company_name_regex = re.escape(company_name_decoded)
+
+#         pipeline = []
+
+#         if match_filter:
+#             pipeline.append({ "$match": match_filter })
+
+#         # Lookup customers
+#         pipeline.append({
+#             "$lookup": {
+#                 "from": "adebeo_customers",
+#                 "let": { "cust_id_str": "$customer_id" },
+#                 "pipeline": [
+#                     {
+#                         "$match": {
+#                             "$expr": {
+#                                 "$eq": ["$_id", { "$toObjectId": "$$cust_id_str" }]
+#                             }
+#                         }
+#                     }
+#                 ],
+#                 "as": "customer"
+#             }
+#         })
+
+#         pipeline.append({
+#             "$unwind": {
+#                 "path": "$customer",
+#                 "preserveNullAndEmptyArrays": False
+#             }
+#         })
+
+#         # Optional company name filter
+#         if company_name_regex:
+#             pipeline.append({
+#                 "$match": {
+#                     "customer.companyName": {
+#                         "$regex": company_name_regex,
+#                         "$options": "i"
+#                     }
+#                 }
+#             })
+
+#         # Lookup products
+#         pipeline.append({
+#             "$lookup": {
+#                 "from": "adebeo_products",  # Adjust collection name if needed
+#                 "let": { "product_ids_str": "$customer.products" },
+#                 "pipeline": [
+#                     {
+#                         "$match": {
+#                             "$expr": {
+#                                 "$in": [
+#                                     { "$toString": "$_id" },
+#                                     { "$ifNull": ["$$product_ids_str", []] }
+#                                 ]
+#                             }
+#                         }
+#                     },
+#                     {
+#                         "$project": {
+#                             "_id": 1,
+#                             "productCode": 1,
+#                             "ProductDisplay": 1,
+#                             "productName": 1
+#                         }
+#                     }
+#                 ],
+#                 "as": "products"
+#             }
+#         })
+
+#         # Count total records
+#         count_pipeline = pipeline + [{ "$count": "total" }]
+#         count_result = list(db.adebeo_funnel.aggregate(count_pipeline))
+#         total_records = count_result[0]["total"] if count_result else 0
+#         total_pages = (total_records // limit) + (1 if total_records % limit else 0)
+
+#         # Pagination
+#         pipeline.extend([
+#             { "$skip": skip },
+#             { "$limit": limit }
+#         ])
+
+#         # Lookup comments
+#         pipeline.append({
+#             "$lookup": {
+#                 "from": "adebeo_customer_comments",
+#                 "let": { "customer_id_str": { "$toString": "$customer._id" } },
+#                 "pipeline": [
+#                     {
+#                         "$match": {
+#                             "$expr": { "$eq": ["$customer_id", "$$customer_id_str"] }
+#                         }
+#                     }
+#                 ],
+#                 "as": "comments"
+#             }
+#         })
+
+#         # Final projection: merge customer + comments + products
+#         pipeline.append({
+#             "$replaceRoot": {
+#                 "newRoot": {
+#                     "$mergeObjects": [
+#                         "$customer",
+#                         {
+#                             "comments": "$comments",
+#                             "products": "$products"
+#                         },
+#                         {
+#                             "assigned_to": "$assigned_to",
+#                             "assigned_date": "$assigned_date"
+#                         }
+#                     ]
+#                 }
+#             }
+#         })
+
+#         # Execute pipeline
+#         results = list(db.adebeo_funnel.aggregate(pipeline))
+
+#         # Post-processing: convert IDs to strings, add fallback for missing products
+#         for r in results:
+#             r["_id"] = str(r["_id"])
+
+#             for comment in r.get("comments", []):
+#                 comment["_id"] = str(comment["_id"])
+#                 comment["customer_id"] = str(comment["customer_id"])
+
+#             # If products are missing or empty, inject fallback
+#             if not r.get("products"):
+#                 r["products"] = [{
+#                     "productCode": "NA",
+#                     "ProductDisplay": "NA",
+#                     "productName": "NA"
+#                 }]
+#             else:
+#                 for product in r["products"]:
+#                     product["_id"] = str(product["_id"])
+
+#         # Return final response
+#         return jsonify({
+#             "data": results,
+#             "limit": limit,
+#             "page": page,
+#             "total_pages": total_pages,
+#             "total_records": total_records
+#         })
+
+#     except Exception as e:
+#         return jsonify({ "message": "An error occurred", "error": str(e) }), 500
 
 
 
@@ -6251,6 +6477,160 @@ def get_business_report():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/payment_report', methods=['GET'])
+@jwt_required()
+def get_payment_report():
+    # --- Admin check ---
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    # --- Parse query params ---
+    start_date_str = request.args.get('startDate')
+    end_date_str = request.args.get('endDate')
+    customer_name_filter = request.args.get('customerName')
+
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 300))
+    except ValueError:
+        return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
+
+    page = max(page, 1)
+    per_page = max(per_page, 1)
+
+    # --- Parse dates (default: today) ---
+    today = datetime.today()
+    start_date = (
+        datetime.strptime(start_date_str, "%Y-%m-%d")
+        if start_date_str
+        else today.replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    end_date = (
+        datetime.strptime(end_date_str, "%Y-%m-%d")
+        if end_date_str
+        else today.replace(hour=23, minute=59, second=59, microsecond=999999)
+    )
+
+    # --- Match filter on invoice_date + optional customer ---
+    match_filter = {"invoice_date": {"$gte": start_date, "$lte": end_date}}
+    if customer_name_filter:
+        match_filter["customer_name"] = {"$regex": customer_name_filter.strip(), "$options": "i"}
+
+    try:
+        pipeline = [
+            {"$match": match_filter},
+
+            # Lookup payments per invoice
+            {
+                "$lookup": {
+                    "from": "adebeo_payments",
+                    "let": { "inv_num": "$invoice_number" },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": { "$eq": ["$invoice_number", "$$inv_num"] },
+                                "$and": [
+                                    { "$or": [
+                                        { "paid_amount": { "$gt": 0 } },
+                                        { "payment_status": { "$ne": None } }
+                                    ]}
+                                ]
+                            }
+                        }
+                    ],
+                    "as": "payments"
+                }
+            },
+
+            # Calculate total paid and remaining amount
+            {
+                "$addFields": {
+                    "total_paid": {"$sum": "$payments.paid_amount"},
+                    "remaining_amount": {"$subtract": ["$total_amount", {"$sum": "$payments.paid_amount"}]}
+                }
+            },
+
+            # Derive payment status
+            {
+                "$addFields": {
+                    "payment_status": {
+                        "$switch": {
+                            "branches": [
+                                {"case": {"$eq": ["$remaining_amount", 0]}, "then": "Paid"},
+                                {"case": {"$lt": ["$remaining_amount", "$total_amount"]}, "then": "Partial"}
+                            ],
+                            "default": "Unpaid"
+                        }
+                    }
+                }
+            },
+
+            # Project the fields we want
+            {
+                "$project": {
+                    "_id": 1,
+                    "invoice_number": 1,
+                    "invoice_date": 1,
+                    "customer_name": 1,
+                    "total_amount": 1,
+                    "total_paid": 1,
+                    "remaining_amount": 1,
+                    "payment_status": 1,
+                    "payments": 1  # optional: include all payment details
+                }
+            },
+
+            # Sort oldest → newest
+            {"$sort": {"invoice_date": 1}}
+        ]
+
+        results = list(adebeo_invoice_collection.aggregate(pipeline))
+
+        # --- Format results ---
+        formatted_results = []
+        for item in results:
+            formatted_item = {
+                "_id": str(item.get("_id")),
+                "Invoice #": item.get("invoice_number"),
+                "Invoice Date": item.get("invoice_date").strftime("%Y-%m-%d") if item.get("invoice_date") else None,
+                "Customer Name": item.get("customer_name"),
+                "Total Amount (INR)": item.get("total_amount") or 0,
+                "Total Paid (INR)": item.get("total_paid") or 0,
+                "Remaining Amount (INR)": item.get("remaining_amount") or 0,
+                "Payment Status": item.get("payment_status"),
+                "Payments": [
+                    {
+                        "_id": str(p.get("_id")),
+                        "paid_amount": p.get("paid_amount"),
+                        "payment_date": p.get("payment_date").strftime("%Y-%m-%d") if p.get("payment_date") else None,
+                        "comments": p.get("comments"),
+                        "payment_status": p.get("payment_status")
+                    }
+                    for p in item.get("payments", [])
+                ]
+            }
+            formatted_results.append(formatted_item)
+
+        # --- Pagination ---
+        total_count = len(formatted_results)
+        total_pages = (total_count + per_page - 1) // per_page
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_results = formatted_results[start_idx:end_idx]
+
+        return jsonify({
+            "payment_report": paginated_results,
+            "currentPage": page,
+            "totalCount": total_count,
+            "totalPages": total_pages
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 #if __name__ == "__main__":
 #    app.run(debug=True)
