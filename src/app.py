@@ -288,9 +288,9 @@ def convert_objectid_to_str(data):
     else:
         return data
 
-@app.route("/funnel_users", methods=["GET"])
+@app.route("/funnel_users2", methods=["GET"])
 @login_required
-def get_funnel_users():
+def get_funnel_users2():
     username = request.user
     claims = get_jwt()
     user_role = claims.get("role")
@@ -489,183 +489,183 @@ def get_funnel_users():
             "error": str(e)
         }), 500
 
-# @app.route("/funnel_users", methods=["GET"])
-# @login_required
-# def get_funnel_users():
-#     username = request.user
-#     claims = get_jwt()
-#     user_role = claims.get("role")
+@app.route("/funnel_users", methods=["GET"])
+@login_required
+def get_funnel_users():
+    username = request.user
+    claims = get_jwt()
+    user_role = claims.get("role")
 
-#     try:
-#         page = int(request.args.get('page', 1))
-#         limit = int(request.args.get('limit', 10))
-#         company_name = request.args.get('companyName', None)
-#         skip = (page - 1) * limit
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 10))
+        company_name = request.args.get('companyName', None)
+        skip = (page - 1) * limit
 
-#         match_filter = {}
-#         if user_role not in ['admin', 'tech']:
-#             match_filter["assigned_to"] = username
+        match_filter = {}
+        if user_role not in ['admin', 'tech']:
+            match_filter["assigned_to"] = username
 
-#         company_name_regex = None
-#         if company_name:
-#             company_name_decoded = unquote(company_name).strip()
-#             company_name_regex = re.escape(company_name_decoded)
+        company_name_regex = None
+        if company_name:
+            company_name_decoded = unquote(company_name).strip()
+            company_name_regex = re.escape(company_name_decoded)
 
-#         pipeline = []
+        pipeline = []
 
-#         if match_filter:
-#             pipeline.append({ "$match": match_filter })
+        if match_filter:
+            pipeline.append({ "$match": match_filter })
 
-#         # Lookup customers
-#         pipeline.append({
-#             "$lookup": {
-#                 "from": "adebeo_customers",
-#                 "let": { "cust_id_str": "$customer_id" },
-#                 "pipeline": [
-#                     {
-#                         "$match": {
-#                             "$expr": {
-#                                 "$eq": ["$_id", { "$toObjectId": "$$cust_id_str" }]
-#                             }
-#                         }
-#                     }
-#                 ],
-#                 "as": "customer"
-#             }
-#         })
+        # Lookup customers
+        pipeline.append({
+            "$lookup": {
+                "from": "adebeo_customers",
+                "let": { "cust_id_str": "$customer_id" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$eq": ["$_id", { "$toObjectId": "$$cust_id_str" }]
+                            }
+                        }
+                    }
+                ],
+                "as": "customer"
+            }
+        })
 
-#         pipeline.append({
-#             "$unwind": {
-#                 "path": "$customer",
-#                 "preserveNullAndEmptyArrays": False
-#             }
-#         })
+        pipeline.append({
+            "$unwind": {
+                "path": "$customer",
+                "preserveNullAndEmptyArrays": False
+            }
+        })
 
-#         # Optional company name filter
-#         if company_name_regex:
-#             pipeline.append({
-#                 "$match": {
-#                     "customer.companyName": {
-#                         "$regex": company_name_regex,
-#                         "$options": "i"
-#                     }
-#                 }
-#             })
+        # Optional company name filter
+        if company_name_regex:
+            pipeline.append({
+                "$match": {
+                    "customer.companyName": {
+                        "$regex": company_name_regex,
+                        "$options": "i"
+                    }
+                }
+            })
 
-#         # Lookup products
-#         pipeline.append({
-#             "$lookup": {
-#                 "from": "adebeo_products",  # Adjust collection name if needed
-#                 "let": { "product_ids_str": "$customer.products" },
-#                 "pipeline": [
-#                     {
-#                         "$match": {
-#                             "$expr": {
-#                                 "$in": [
-#                                     { "$toString": "$_id" },
-#                                     { "$ifNull": ["$$product_ids_str", []] }
-#                                 ]
-#                             }
-#                         }
-#                     },
-#                     {
-#                         "$project": {
-#                             "_id": 1,
-#                             "productCode": 1,
-#                             "ProductDisplay": 1,
-#                             "productName": 1
-#                         }
-#                     }
-#                 ],
-#                 "as": "products"
-#             }
-#         })
+        # Lookup products
+        pipeline.append({
+            "$lookup": {
+                "from": "adebeo_products",  # Adjust collection name if needed
+                "let": { "product_ids_str": "$customer.products" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$in": [
+                                    { "$toString": "$_id" },
+                                    { "$ifNull": ["$$product_ids_str", []] }
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "productCode": 1,
+                            "ProductDisplay": 1,
+                            "productName": 1
+                        }
+                    }
+                ],
+                "as": "products"
+            }
+        })
 
-#         # Count total records
-#         count_pipeline = pipeline + [{ "$count": "total" }]
-#         count_result = list(db.adebeo_funnel.aggregate(count_pipeline))
-#         total_records = count_result[0]["total"] if count_result else 0
-#         total_pages = (total_records // limit) + (1 if total_records % limit else 0)
+        # Count total records
+        count_pipeline = pipeline + [{ "$count": "total" }]
+        count_result = list(db.adebeo_funnel.aggregate(count_pipeline))
+        total_records = count_result[0]["total"] if count_result else 0
+        total_pages = (total_records // limit) + (1 if total_records % limit else 0)
 
-#         # Pagination
-#         pipeline.extend([
-#             { "$skip": skip },
-#             { "$limit": limit }
-#         ])
+        # Pagination
+        pipeline.extend([
+            { "$skip": skip },
+            { "$limit": limit }
+        ])
 
-#         # Lookup comments
-#         pipeline.append({
-#             "$lookup": {
-#                 "from": "adebeo_customer_comments",
-#                 "let": { "customer_id_str": { "$toString": "$customer._id" } },
-#                 "pipeline": [
-#                     {
-#                         "$match": {
-#                             "$expr": { "$eq": ["$customer_id", "$$customer_id_str"] }
-#                         }
-#                     }
-#                 ],
-#                 "as": "comments"
-#             }
-#         })
+        # Lookup comments
+        pipeline.append({
+            "$lookup": {
+                "from": "adebeo_customer_comments",
+                "let": { "customer_id_str": { "$toString": "$customer._id" } },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": { "$eq": ["$customer_id", "$$customer_id_str"] }
+                        }
+                    }
+                ],
+                "as": "comments"
+            }
+        })
 
-#         # Final projection: merge customer + comments + products
-#         pipeline.append({
-#             "$replaceRoot": {
-#                 "newRoot": {
-#                     "$mergeObjects": [
-#                         "$customer",
-#                         {
-#                             "comments": "$comments",
-#                             "products": "$products"
-#                         },
-#                         {
-#                             "assigned_to": "$assigned_to",
-#                             "assigned_date": "$assigned_date"
-#                         }
-#                     ]
-#                 }
-#             }
-#         })
+        # Final projection: merge customer + comments + products
+        pipeline.append({
+            "$replaceRoot": {
+                "newRoot": {
+                    "$mergeObjects": [
+                        "$customer",
+                        {
+                            "comments": "$comments",
+                            "products": "$products"
+                        },
+                        {
+                            "assigned_to": "$assigned_to",
+                            "assigned_date": "$assigned_date"
+                        }
+                    ]
+                }
+            }
+        })
 
-#         # Execute pipeline
-#         results = list(db.adebeo_funnel.aggregate(pipeline))
+        # Execute pipeline
+        results = list(db.adebeo_funnel.aggregate(pipeline))
 
-#         # Post-processing: convert IDs to strings, add fallback for missing products
-#         for r in results:
-#             r["_id"] = str(r["_id"])
+        # Post-processing: convert IDs to strings, add fallback for missing products
+        for r in results:
+            r["_id"] = str(r["_id"])
 
-#             for comment in r.get("comments", []):
-#                 comment["_id"] = str(comment["_id"])
-#                 comment["customer_id"] = str(comment["customer_id"])
+            for comment in r.get("comments", []):
+                comment["_id"] = str(comment["_id"])
+                comment["customer_id"] = str(comment["customer_id"])
 
-#             # If products are missing or empty, inject fallback
-#             if not r.get("products"):
-#                 r["products"] = [{
-#                     "productCode": "NA",
-#                     "ProductDisplay": "NA",
-#                     "productName": "NA"
-#                 }]
-#             else:
-#                 for product in r["products"]:
-#                     product["_id"] = str(product["_id"])
+            # If products are missing or empty, inject fallback
+            if not r.get("products"):
+                r["products"] = [{
+                    "productCode": "NA",
+                    "ProductDisplay": "NA",
+                    "productName": "NA"
+                }]
+            else:
+                for product in r["products"]:
+                    product["_id"] = str(product["_id"])
 
-#         # Return final response
-#         return jsonify({
-#             "data": results,
-#             "limit": limit,
-#             "page": page,
-#             "total_pages": total_pages,
-#             "total_records": total_records
-#         })
+        # Return final response
+        return jsonify({
+            "data": results,
+            "limit": limit,
+            "page": page,
+            "total_pages": total_pages,
+            "total_records": total_records
+        })
 
-#     except Exception as e:
-#         return jsonify({ "message": "An error occurred", "error": str(e) }), 500
-
-
+    except Exception as e:
+        return jsonify({ "message": "An error occurred", "error": str(e) }), 500
 
 
 
+
+## this must be very old implementation to be removed 10 Jan 2026
 # @app.route("/funnel_users", methods=["GET"])
 # @login_required
 # def get_funnel_users():
@@ -5481,40 +5481,79 @@ def get_comment_activity(company_filter, start_date, end_date, skip, limit, user
     return activities
 
 
-    
 def get_quote_activity(company_filter, start_date, end_date, skip=0, limit=None, user=None):
+    query = dict(company_filter)
+
+    query["insertDate"] = {"$gte": start_date, "$lte": end_date}
     if user:
-        company_filter['insertBy'] = user
+        query["insertBy"] = user
 
-    date_filter = {
-        'insertDate': {
-            '$gte': start_date,
-            '$lte': end_date
+    cursor = adebeo_quotes_collection.find(
+        query,
+        {
+            "insertDate": 1,
+            "insertBy": 1,
+            "customer_id": 1,
+            "quote_number": 1,
+            "quoteTag": 1
         }
-    }
+    ).sort("insertDate", 1)
 
-    query = {**company_filter, **date_filter}
-
-    cursor = adebeo_quotes_collection.find(query).skip(skip).sort("insertDate", 1)
-    
     if limit:
-        cursor = cursor.limit(limit)
+        cursor = cursor.skip(skip).limit(limit)
+
+    quotes = list(cursor)
+    customer_map = get_customer_name_map(
+        [q.get("customer_id") for q in quotes if q.get("customer_id")]
+    )
 
     activities = []
-    for quote in cursor:
-        customer_id = quote.get('customer_id')
-        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'
-
-        activity = {
+    for quote in quotes:
+        cid = str(quote.get("customer_id", ""))
+        activities.append({
             "activity_type": "Quote",
-            "insertDate": quote['insertDate'],
-            "insertBy": quote['insertBy'],
+            "insertDate": quote["insertDate"],
+            "insertBy": quote["insertBy"],
             "details": f"Quote ID: {quote['quote_number']}, Quote Tag: {quote.get('quoteTag', '')}",
-            "company_name": customer_name
-        }
-        activities.append(activity)
+            "company_name": customer_map.get(cid, "Unknown")
+        })
 
     return activities
+
+#commenting on 10 Jan 2026    
+# def get_quote_activity(company_filter, start_date, end_date, skip=0, limit=None, user=None):
+#     if user:
+#         company_filter['insertBy'] = user
+
+#     date_filter = {
+#         'insertDate': {
+#             '$gte': start_date,
+#             '$lte': end_date
+#         }
+#     }
+
+#     query = {**company_filter, **date_filter}
+
+#     cursor = adebeo_quotes_collection.find(query).skip(skip).sort("insertDate", 1)
+    
+#     if limit:
+#         cursor = cursor.limit(limit)
+
+#     activities = []
+#     for quote in cursor:
+#         customer_id = quote.get('customer_id')
+#         customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'
+
+#         activity = {
+#             "activity_type": "Quote",
+#             "insertDate": quote['insertDate'],
+#             "insertBy": quote['insertBy'],
+#             "details": f"Quote ID: {quote['quote_number']}, Quote Tag: {quote.get('quoteTag', '')}",
+#             "company_name": customer_name
+#         }
+#         activities.append(activity)
+
+#     return activities
 
 
 
@@ -5552,39 +5591,78 @@ def get_proforma_activity(company_filter, start_date, end_date, skip=0, limit=No
     return activities
 
 
-
 def get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=None, user=None):
+    query = dict(company_filter)
+    query["insertDate"] = {"$gte": start_date, "$lte": end_date}
     if user:
-        company_filter['insertBy'] = user
+        query["insertBy"] = user
 
-    date_filter = {
-        'insertDate': {
-            '$gte': start_date,
-            '$lte': end_date
+    cursor = adebeo_invoice_collection.find(
+        query,
+        {
+            "insertDate": 1,
+            "insertBy": 1,
+            "customer_id": 1,
+            "invoice_number": 1,
+            "status": 1
         }
-    }
-
-    query = {**company_filter, **date_filter}
-    cursor = adebeo_invoice_collection.find(query).skip(skip).sort("insertDate", 1)
+    ).sort("insertDate", 1)
 
     if limit:
-        cursor = cursor.limit(limit)
+        cursor = cursor.skip(skip).limit(limit)
+
+    invoices = list(cursor)
+    customer_map = get_customer_name_map(
+        [i.get("customer_id") for i in invoices if i.get("customer_id")]
+    )
 
     activities = []
-    for invoice in cursor:
-        customer_id = invoice.get('customer_id')
-        customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'
-
-        activity = {
+    for inv in invoices:
+        cid = str(inv.get("customer_id", ""))
+        activities.append({
             "activity_type": "Invoice",
-            "insertDate": invoice['insertDate'],
-            "insertBy": invoice['insertBy'],
-            "details": f"Invoice Number: {invoice.get('invoice_number', '')}, Invoice Status: {invoice.get('status', '')}",
-            "company_name": customer_name
-        }
-        activities.append(activity)
+            "insertDate": inv["insertDate"],
+            "insertBy": inv["insertBy"],
+            "details": f"Invoice Number: {inv.get('invoice_number','')}, Invoice Status: {inv.get('status','')}",
+            "company_name": customer_map.get(cid, "Unknown")
+        })
 
     return activities
+
+
+#commented on 10 Jan 2026
+# def get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=None, user=None):
+#     if user:
+#         company_filter['insertBy'] = user
+
+#     date_filter = {
+#         'insertDate': {
+#             '$gte': start_date,
+#             '$lte': end_date
+#         }
+#     }
+
+#     query = {**company_filter, **date_filter}
+#     cursor = adebeo_invoice_collection.find(query).skip(skip).sort("insertDate", 1)
+
+#     if limit:
+#         cursor = cursor.limit(limit)
+
+#     activities = []
+#     for invoice in cursor:
+#         customer_id = invoice.get('customer_id')
+#         customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'
+
+#         activity = {
+#             "activity_type": "Invoice",
+#             "insertDate": invoice['insertDate'],
+#             "insertBy": invoice['insertBy'],
+#             "details": f"Invoice Number: {invoice.get('invoice_number', '')}, Invoice Status: {invoice.get('status', '')}",
+#             "company_name": customer_name
+#         }
+#         activities.append(activity)
+
+#     return activities
 
 
 
@@ -5601,38 +5679,71 @@ def convert_to_datetime(date_str):
 from datetime import datetime
 
 def get_customer_activity(start_date, end_date, company_filter=None, skip=0, limit=None, user=None):
-    cursor = adebeo_customer_collection.find(company_filter or {})
-    activities = []
-    
-    for doc in cursor:
-        doc_date = convert_str_to_datetime(doc.get('insertDate'))
-        if not doc_date:
-            continue  # skip invalid dates
-        
-        if not (start_date <= doc_date <= end_date):
-            continue
-        
-        if user and doc.get('insertBy') != user:
-            continue
+    query = dict(company_filter or {})
+    query["insertDate"] = {"$gte": start_date, "$lte": end_date}
+    if user:
+        query["insertBy"] = user
 
-        activity_data = {
-            "activity_type": "Customer",
-            "insertDate": doc_date,
-            "insertBy": doc.get('insertBy', 'Unknown'),
-            "details": f"Activity Type: Customer Add/ Edit, Details: {doc.get('primaryEmail', 'No details available')}",
-            "company_name": doc.get('companyName', 'Unknown')
+    cursor = adebeo_customer_collection.find(
+        query,
+        {
+            "insertDate": 1,
+            "insertBy": 1,
+            "primaryEmail": 1,
+            "companyName": 1
         }
-        activities.append(activity_data)
+    ).sort("insertDate", -1)
 
-    # Sort and paginate here
-    activities.sort(key=lambda x: x['insertDate'], reverse=True)
+    if limit:
+        cursor = cursor.skip(skip).limit(limit)
 
-    if limit is not None and limit > 0:
-        activities = activities[skip:skip+limit]
-    else:
-        activities = activities[skip:]
+    activities = []
+    for doc in cursor:
+        activities.append({
+            "activity_type": "Customer",
+            "insertDate": doc["insertDate"],
+            "insertBy": doc.get("insertBy", "Unknown"),
+            "details": f"Activity Type: Customer Add/ Edit, Details: {doc.get('primaryEmail','No details available')}",
+            "company_name": doc.get("companyName", "Unknown")
+        })
 
     return activities
+
+
+# commented on 10 Jan 2026
+# def get_customer_activity(start_date, end_date, company_filter=None, skip=0, limit=None, user=None):
+#     cursor = adebeo_customer_collection.find(company_filter or {})
+#     activities = []
+    
+#     for doc in cursor:
+#         doc_date = convert_str_to_datetime(doc.get('insertDate'))
+#         if not doc_date:
+#             continue  # skip invalid dates
+        
+#         if not (start_date <= doc_date <= end_date):
+#             continue
+        
+#         if user and doc.get('insertBy') != user:
+#             continue
+
+#         activity_data = {
+#             "activity_type": "Customer",
+#             "insertDate": doc_date,
+#             "insertBy": doc.get('insertBy', 'Unknown'),
+#             "details": f"Activity Type: Customer Add/ Edit, Details: {doc.get('primaryEmail', 'No details available')}",
+#             "company_name": doc.get('companyName', 'Unknown')
+#         }
+#         activities.append(activity_data)
+
+#     # Sort and paginate here
+#     activities.sort(key=lambda x: x['insertDate'], reverse=True)
+
+#     if limit is not None and limit > 0:
+#         activities = activities[skip:skip+limit]
+#     else:
+#         activities = activities[skip:]
+
+#     return activities
 
 
 
@@ -5676,7 +5787,7 @@ def convert_str_to_datetime(date_str):
     except Exception:
         return None  # or handle differently        
 
-# Route to fetch the activity report with pagination and report type
+
 @app.route('/activity_report', methods=['GET'])
 def get_activity_report():
     start_date = request.args.get('startDate')
@@ -5684,17 +5795,16 @@ def get_activity_report():
     company_name = request.args.get('companyName')
     user = request.args.get('user')
     report_type = request.args.get('reportType', 'detailed').lower()
+
     try:
-        page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
+        page = max(int(request.args.get('page', 1)), 1)
+        per_page = max(int(request.args.get('per_page', 10)), 1)
     except ValueError:
         return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
 
-    if page < 1:
-        page = 1
-    if per_page < 1:
-        per_page = 10
-
+    # -----------------------------
+    # Date parsing (unchanged logic)
+    # -----------------------------
     def parse_iso_date_or_default(date_str, default_dt, default_time_str):
         if not date_str:
             return default_dt
@@ -5705,48 +5815,217 @@ def get_activity_report():
         except Exception:
             return default_dt
 
-    start_date = parse_iso_date_or_default(start_date, datetime.today().replace(hour=0, minute=0, second=0, microsecond=0), 'T00:00:00')
-    end_date = parse_iso_date_or_default(end_date, datetime.today().replace(hour=23, minute=59, second=59, microsecond=999999), 'T23:59:59')
+    start_date = parse_iso_date_or_default(
+        start_date,
+        datetime.today().replace(hour=0, minute=0, second=0, microsecond=0),
+        'T00:00:00'
+    )
+    end_date = parse_iso_date_or_default(
+        end_date,
+        datetime.today().replace(hour=23, minute=59, second=59, microsecond=999999),
+        'T23:59:59'
+    )
 
+    # -----------------------------
+    # Company filter (DO NOT mutate)
+    # -----------------------------
     company_filter = {}
     if company_name:
-        company_filter['companyName'] = {'$regex': company_name.strip(), '$options': 'i'}
+        company_filter = {
+            'companyName': {'$regex': company_name.strip(), '$options': 'i'}
+        }
 
     try:
-        quote_activities = get_quote_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
-        proforma_activities = get_proforma_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
-        invoice_activities = get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
+        # -----------------------------
+        # Fetch activities (same logic)
+        # -----------------------------
+        activities = []
 
-        activities = quote_activities + proforma_activities + invoice_activities
+        activities.extend(
+            get_quote_activity(dict(company_filter), start_date, end_date, user=user)
+        )
+        activities.extend(
+            get_proforma_activity(dict(company_filter), start_date, end_date, user=user)
+        )
+        activities.extend(
+            get_invoice_activity(dict(company_filter), start_date, end_date, user=user)
+        )
 
         if report_type == 'detailed':
-            comment_activities = get_comment_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
-            customer_activities = get_customer_activity(start_date, end_date, company_filter, skip=0, limit=0, user=user)
-            activities += comment_activities + customer_activities
+            activities.extend(
+                get_comment_activity(dict(company_filter), start_date, end_date, skip=0, limit=0, user=user)
+            )
+            activities.extend(
+                get_customer_activity(start_date, end_date, dict(company_filter), skip=0, limit=None, user=user)
+            )
 
-        activities = activities or []
+        # -----------------------------
+        # Sort + paginate (same behavior)
+        # -----------------------------
         activities.sort(key=lambda x: x['insertDate'], reverse=True)
 
         total_count = len(activities)
         total_pages = (total_count + per_page - 1) // per_page
         skip = (page - 1) * per_page
 
-        paginated_activities = activities[skip:skip + per_page]
+        paginated_activities = activities[skip: skip + per_page]
 
-        response = {
+        return jsonify({
             "activities": paginated_activities,
             "currentPage": page,
             "totalCount": total_count,
-            "totalPages": total_pages,
-        }
-
-        return jsonify(response)
+            "totalPages": total_pages
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def get_customer_name_map(customer_ids):
+    """
+    Fetch customer names in ONE query.
+    Returns a dict: { customer_id (str) : companyName }
+    """
+    if not customer_ids:
+        return {}
+
+    valid_ids = []
+    for cid in customer_ids:
+        try:
+            if isinstance(cid, str):
+                valid_ids.append(ObjectId(cid))
+            else:
+                valid_ids.append(cid)
+        except Exception:
+            pass
+
+    if not valid_ids:
+        return {}
+
+    cursor = adebeo_customer_collection.find(
+        {"_id": {"$in": valid_ids}},
+        {"companyName": 1}
+    )
+
+    return {
+        str(doc["_id"]): doc.get("companyName", "Unknown")
+        for doc in cursor
+    }
+
+def add_safe_insert_date_stage():
+    return {
+        "$addFields": {
+            "insertDate": {
+                "$cond": {
+                    "if": {"$or": [{"$eq": ["$insertDate", None]}, {"$not": ["$insertDate"]}]},
+                    "then": datetime(1970, 1, 1),
+                    "else": "$insertDate"
+                }
+            }
+        }
+    }
+
+def build_match(company_filter, start_date, end_date, user):
+    match = {
+        "insertDate": {"$gte": start_date, "$lte": end_date}
+    }
+    if company_filter:
+        match.update(company_filter)
+    if user:
+        match["insertBy"] = user
+    return match
 
 
+# this route has been commented on 10 Jan 2026 old route used on live
+# Route to fetch the activity report with pagination and report type
+# @app.route('/activity_report', methods=['GET'])
+# def get_activity_report():
+#     start_date = request.args.get('startDate')
+#     end_date = request.args.get('endDate')
+#     company_name = request.args.get('companyName')
+#     user = request.args.get('user')
+#     report_type = request.args.get('reportType', 'detailed').lower()
+#     try:
+#         page = int(request.args.get('page', 1))
+#         per_page = int(request.args.get('per_page', 10))
+#     except ValueError:
+#         return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
+
+#     if page < 1:
+#         page = 1
+#     if per_page < 1:
+#         per_page = 10
+
+#     def parse_iso_date_or_default(date_str, default_dt, default_time_str):
+#         if not date_str:
+#             return default_dt
+#         try:
+#             if 'T' not in date_str:
+#                 date_str += default_time_str
+#             return datetime.fromisoformat(date_str)
+#         except Exception:
+#             return default_dt
+
+#     start_date = parse_iso_date_or_default(start_date, datetime.today().replace(hour=0, minute=0, second=0, microsecond=0), 'T00:00:00')
+#     end_date = parse_iso_date_or_default(end_date, datetime.today().replace(hour=23, minute=59, second=59, microsecond=999999), 'T23:59:59')
+
+#     company_filter = {}
+#     if company_name:
+#         company_filter['companyName'] = {'$regex': company_name.strip(), '$options': 'i'}
+
+#     try:
+#         quote_activities = get_quote_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
+#         proforma_activities = get_proforma_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
+#         invoice_activities = get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
+
+#         activities = quote_activities + proforma_activities + invoice_activities
+
+#         if report_type == 'detailed':
+#             comment_activities = get_comment_activity(company_filter, start_date, end_date, skip=0, limit=0, user=user)
+#             customer_activities = get_customer_activity(start_date, end_date, company_filter, skip=0, limit=0, user=user)
+#             activities += comment_activities + customer_activities
+
+#         activities = activities or []
+#         activities.sort(key=lambda x: x['insertDate'], reverse=True)
+
+#         total_count = len(activities)
+#         total_pages = (total_count + per_page - 1) // per_page
+#         skip = (page - 1) * per_page
+
+#         paginated_activities = activities[skip:skip + per_page]
+
+#         response = {
+#             "activities": paginated_activities,
+#             "currentPage": page,
+#             "totalCount": total_count,
+#             "totalPages": total_pages,
+#         }
+
+#         return jsonify(response)
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+
+# def get_customer_name_map(customer_ids):
+#     """
+#     Fetch all customer names in ONE query
+#     """
+#     if not customer_ids:
+#         return {}
+
+#     ids = []
+#     for cid in customer_ids:
+#         try:
+#             ids.append(ObjectId(cid) if isinstance(cid, str) else cid)
+#         except Exception:
+#             pass
+
+#     cursor = adebeo_customer_collection.find(
+#         {"_id": {"$in": ids}},
+#         {"companyName": 1}
+#     )
+
+#     return {str(doc["_id"]): doc.get("companyName", "Unknown") for doc in cursor}
 
 
 
