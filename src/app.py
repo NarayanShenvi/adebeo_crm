@@ -4367,6 +4367,130 @@ def create_purchase_orders():
         logging.error(f"Error creating Purchase Orders: {str(e)}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
+@app.route('/generate_tds_pdf/<invoice_number>', methods=["POST"])
+@login_required
+def generate_tds_pdf(invoice_number):
+    try:
+        base_url = 'https://adebeo-crm1.onrender.com'
+        # Fetch the invoice data
+        invoice = adebeo_invoice_collection.find_one({"invoice_number": invoice_number})
+        if not invoice:
+            return jsonify({"error": "Invoice not found"}), 404
+        
+        # Fetch customer information using customer_id from the invoice
+        customer_id = invoice.get("customer_id", "0")
+        customer = None
+
+        if customer_id != "0":
+            customer = adebeo_customer_collection.find_one({"_id": ObjectId(customer_id)})
+
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+
+        # Fetch company information
+        company_document = company_datas.find_one({})
+        if company_document:
+            # Clean the company data
+            cleaned_document = {key.strip('\"'): value for key, value in company_document.items()}
+            about_us = cleaned_document.get("about_us", "No information available.")
+            terms1 = cleaned_document.get("terms1", "No terms available.")
+            products = cleaned_document.get("products", "No products information available.")
+            company_name = cleaned_document.get("company_name", "Adebeo")
+            company_address = cleaned_document.get("company_address", "Bangalore")
+            company_contact = cleaned_document.get("company_contact", "9008513444")
+            company_email = cleaned_document.get("company_email", "narayan@adebeo.co.in")
+            company_gstin = cleaned_document.get("company_gstin", "-")
+            company_account_no1 = cleaned_document.get("company_account1", " ")
+            company_bankbranch1 = cleaned_document.get("company_bankbranch1", " ")
+            company_bank = cleaned_document.get("company_bank", " ")
+            company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
+            company_swift1 = cleaned_document.get("company_swift1", "-")
+            company_pan = cleaned_document.get("company_pan", "-")
+            invoice_note1 = cleaned_document.get("invoice_note1", " ")
+            company_payee = cleaned_document.get("company_payee", " ")
+        else:
+            return jsonify({"error": "Company details not found"}), 404
+
+        # Prepare invoice details (items, total amounts, etc.)
+        total_amount = invoice["total_amount"]
+        items = invoice["items"]
+        # Render the HTML template with dynamic data
+        rendered_html = render_template(
+            "TDS_template.html", 
+            performa_number=invoice_number,
+            customer_name=customer.get("companyName", "N/A"),
+            #date=datetime.now().strftime('%Y-%m-%d'),
+            date =invoice["invoice_date"].strftime('%Y-%m-%d'),
+            total_sum=sum(item.get('sub_total', 0) for item in items),
+            products=items,  # Use all items from the invoice
+            company_name=company_name,
+            company_address=company_address,
+            company_contact=company_contact,
+            company_email=company_email,
+            company_gstin=company_gstin,
+            company_account_no1=company_account_no1,
+            company_bank = company_bank,
+            company_bankbranch1=company_bankbranch1,
+            company_ifsc1=company_ifsc1,
+            company_swift1=company_swift1,
+            company_pan=company_pan,
+            notes=invoice_note1,
+            company_payee=company_payee,
+            base_url =base_url,
+            po_invoice = invoice,
+            addl_discount = 0, #just added
+            gross_total = total_amount,
+            logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',
+            po_ref = invoice["po_ref"],
+            customer_gstin = "GSTIN: "+customer.get("gstin", "N/A"),
+            customer_address = customer.get("address", "N/A"),
+
+        )
+        pdf_filename = f"tds_invoice_{uuid.uuid4()}.pdf"
+
+         # Local file save (for debugging purposes)
+        local_pdf_folder = './static/pdf'  # Local folder for testing
+        os.makedirs(local_pdf_folder, exist_ok=True)  # Create the folder if it doesn't exist
+        local_pdf_file_path = os.path.join(local_pdf_folder, pdf_filename)
+        try:
+            HTML(string=rendered_html).write_pdf(local_pdf_file_path)
+            logging.debug(f"Local PDF successfully saved at: {local_pdf_file_path}")
+        except Exception as e:
+            logging.error(f"Error saving local PDF: {str(e)}")
+
+        # Remote file save (on Render persistent disk)
+        remote_pdf_folder = '/mnt/render/persistent/pdf'  # Render persistent disk folder
+        os.makedirs(remote_pdf_folder, exist_ok=True)  # Ensure the remote folder exists
+        remote_pdf_file_path = os.path.join(remote_pdf_folder, pdf_filename)
+
+        try:
+            HTML(string=rendered_html).write_pdf(remote_pdf_file_path)
+                # Check if the file was saved successfully
+            if os.path.exists(remote_pdf_file_path):
+                logging.debug(f"Remote PDF successfully saved at: {remote_pdf_file_path}")
+            else:
+               logging.error(f"Failed to save remote PDF at: {remote_pdf_file_path}")
+        except Exception as e:
+                logging.error(f"Error saving remote PDF to persistent disk: {str(e)}")
+
+        # Update the PO document with the PDF file path
+        #adebeo_invoice_collection.update_one(
+        #    {"invoice_number": invoice_number},  # Match by invoice_number
+        #        {
+        #            "$set": {  # Use $set to specify the fields to update
+        #                "pdf_filename": pdf_filename,  # Update pdf_filename field
+        #                "invoiced_date": datetime.now().strftime('%Y-%m-%d')  # Update invoiced_date field
+        #            }
+        #        }    
+        #)
+        return jsonify({"message": "TDS PDF generated successfully", "file_path": local_pdf_file_path}), 200
+
+    except Exception as e:
+        logging.error(f"Error generating PDF: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+
 @app.route('/generate_invoice_pdf/<invoice_number>', methods=["POST"])
 @login_required
 def generate_invoice_pdf(invoice_number):
@@ -4415,13 +4539,13 @@ def generate_invoice_pdf(invoice_number):
         # Prepare invoice details (items, total amounts, etc.)
         total_amount = invoice["total_amount"]
         items = invoice["items"]
-
         # Render the HTML template with dynamic data
         rendered_html = render_template(
             "invoice_template.html", 
             performa_number=invoice_number,
             customer_name=customer.get("companyName", "N/A"),
-            date=datetime.now().strftime('%Y-%m-%d'),
+            #date=datetime.now().strftime('%Y-%m-%d'),
+            date =invoice["invoice_date"].strftime('%Y-%m-%d'),
             total_sum=sum(item.get('sub_total', 0) for item in items),
             products=items,  # Use all items from the invoice
             company_name=company_name,
