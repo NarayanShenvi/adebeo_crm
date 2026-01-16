@@ -25,6 +25,7 @@ from num2words import num2words
 import requests
 import asyncio
 import pprint
+
 #from flask_login import current_user
 #from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -6556,7 +6557,7 @@ def get_purchase_report():
 
     try:
         page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
+        per_page = int(request.args.get('per_page', 3000))
     except ValueError:
         return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
 
@@ -6589,6 +6590,27 @@ def get_purchase_report():
         # --- Aggregation pipeline ---
         pipeline = [
             {"$match": match_filter},
+
+            {"$addFields": {
+                "calculated_total_amount": {
+                    "$cond": {
+                        "if": {
+                            "$eq": [
+                                {"$toLower": "$status"},
+                                "disabled"
+                            ]
+                        },
+                        "then": 0,
+                        "else": {
+                            "$add": [
+                                {"$multiply": ["$purchase_price", "$quantity"]},
+                                {"$ifNull": ["$tax_amount", 0]}
+                            ]
+                        }
+                    }
+                }
+            }},
+
             {"$project": {
                 "po_number": 1,
                 "date": 1,
@@ -6597,12 +6619,14 @@ def get_purchase_report():
                 "quantity": 1,
                 "purchase_price": 1,
                 "tax_amount": 1,
-                "total_amount": 1,
+                "total_amount": "$calculated_total_amount",
                 "mode": 1,
                 "business_type": 1,
-                "status": 1
+                "status": 1,
+                "customer_name":1
             }},
-            {"$sort": {"date": -1}}
+
+            {"$sort": {"po_number": -1}}
         ]
 
         results = list(adebeo_purchase_order_collection.aggregate(pipeline))
@@ -6622,6 +6646,7 @@ def get_purchase_report():
                 "Total Amount (INR)": item.get("total_amount", 0),
                 "Mode": item.get("mode"),
                 "Business Type": item.get("business_type"),
+                "Customer name": item.get("customer_name"),
                 "Status": item.get("status")
             })
 
@@ -6642,6 +6667,7 @@ def get_purchase_report():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/business_report', methods=['GET'])
 @jwt_required()
@@ -6909,6 +6935,200 @@ def get_payment_report():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+from flask import Response
+import pandas as pd
+from datetime import datetime
+
+@app.route('/quote_customer_product_report_csv', methods=['GET'])
+@jwt_required()
+def get_quote_customer_product_report_csv():
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied"}), 403
+
+    start_date_str = request.args.get("startDate")
+    end_date_str = request.args.get("endDate")
+    product_keyword = request.args.get("product", "").strip()
+
+    if not product_keyword:
+        return jsonify({"error": "Product keyword is required"}), 400
+
+    today = datetime.utcnow()
+    start_date = (
+        datetime.strptime(start_date_str, "%Y-%m-%d")
+        if start_date_str else today.replace(hour=0, minute=0, second=0)
+    )
+    end_date = (
+        datetime.strptime(end_date_str, "%Y-%m-%d")
+        if end_date_str else today.replace(hour=23, minute=59, second=59)
+    )
+
+    try:
+        pipeline = [
+            {
+                "$match": {
+                    "insertDate": {
+                        "$gte": start_date,
+                        "$lte": end_date
+                    }
+                }
+            },
+            {"$unwind": "$items"},
+            {
+                "$match": {
+                    "items.description": {
+                        "$regex": product_keyword,
+                        "$options": "i"
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$quote_number",
+                    "quote_date": {"$first": "$insertDate"},
+                    "customer_name": {"$first": "$customer_name"},
+                    "customer_email": {"$first": "$customer_email"},
+                    "customer_phone": {"$first": "$customer_phone"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "Quote #": "$_id",
+                    "Quote Date": "$quote_date",
+                    "Customer Name": "$customer_name",
+                    "Customer Email": "$customer_email",
+                    "Customer Contact": "$customer_phone"
+                }
+            },
+            {"$sort": {"Quote Date": 1}}
+        ]
+
+        results = list(adebeo_quotes_collection.aggregate(pipeline))
+
+        # Convert to DataFrame
+        df = pd.DataFrame(results)
+
+        # Convert date to string for CSV
+        if not df.empty:
+            df["Quote Date"] = df["Quote Date"].dt.strftime("%Y-%m-%d")
+
+        csv_data = df.to_csv(index=False)
+
+        filename = f"sketchup_quotes_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
+
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/quote_customer_product_report', methods=['GET'])
+@jwt_required()
+def get_quote_customer_product_report():
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied"}), 403
+
+    start_date_str = request.args.get("startDate")
+    end_date_str = request.args.get("endDate")
+    product_keyword = request.args.get("product", "").strip()
+
+    if not product_keyword:
+        return jsonify({"error": "Product keyword is required"}), 400
+
+    today = datetime.utcnow()
+    start_date = (
+        datetime.strptime(start_date_str, "%Y-%m-%d")
+        if start_date_str else today.replace(hour=0, minute=0, second=0)
+    )
+    end_date = (
+        datetime.strptime(end_date_str, "%Y-%m-%d")
+        if end_date_str else today.replace(hour=23, minute=59, second=59)
+    )
+
+    try:
+        pipeline = [
+            # 1️⃣ Filter by date
+            {
+                "$match": {
+                    "insertDate": {
+                        "$gte": start_date,
+                        "$lte": end_date
+                    }
+                }
+            },
+
+            # 2️⃣ Item-level processing
+            {"$unwind": "$items"},
+
+            # 3️⃣ Filter by product keyword
+            {
+                "$match": {
+                    "items.description": {
+                        "$regex": product_keyword,
+                        "$options": "i"
+                    }
+                }
+            },
+
+            # 4️⃣ Group to avoid duplicate quotes
+            {
+                "$group": {
+                    "_id": "$quote_number",
+                    "quote_date": {"$first": "$insertDate"},
+                    "customer_name": {"$first": "$customer_name"},
+                    "customer_email": {"$first": "$customer_email"},
+                    "customer_phone": {"$first": "$customer_phone"}
+                }
+            },
+
+            # 5️⃣ Final projection
+            {
+                "$project": {
+                    "_id": 0,
+                    "quote_number": "$_id",
+                    "quote_date": 1,
+                    "customer_name": 1,
+                    "customer_email": 1,
+                    "customer_phone": 1
+                }
+            },
+
+            # 6️⃣ Sort by quote date
+            {"$sort": {"quote_date": 1}}
+        ]
+
+        results = list(adebeo_quotes_collection.aggregate(pipeline))
+
+        report = []
+        for row in results:
+            report.append({
+                "Quote #": row.get("quote_number"),
+                "Quote Date": row.get("quote_date").strftime("%Y-%m-%d"),
+                "Customer Name": row.get("customer_name"),
+                "Customer Email": row.get("customer_email"),
+                "Customer Contact": row.get("customer_phone")
+            })
+
+        return jsonify({
+            "product": product_keyword,
+            "from": start_date.strftime("%Y-%m-%d"),
+            "to": end_date.strftime("%Y-%m-%d"),
+            "totalCount": len(report),
+            "data": report
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 #if __name__ == "__main__":
