@@ -6936,98 +6936,98 @@ def get_payment_report():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-from flask import Response
-import pandas as pd
-from datetime import datetime
+#from flask import Response
+#import pandas as pd
+#from datetime import datetime
 
-@app.route('/quote_customer_product_report_csv', methods=['GET'])
-@jwt_required()
-def get_quote_customer_product_report_csv():
-    claims = get_jwt()
-    if claims.get("role") != "admin":
-        return jsonify({"error": "Access denied"}), 403
+# @app.route('/quote_customer_product_report_csv', methods=['GET'])
+# @jwt_required()
+# def get_quote_customer_product_report_csv():
+#     claims = get_jwt()
+#     if claims.get("role") != "admin":
+#         return jsonify({"error": "Access denied"}), 403
 
-    start_date_str = request.args.get("startDate")
-    end_date_str = request.args.get("endDate")
-    product_keyword = request.args.get("product", "").strip()
+#     start_date_str = request.args.get("startDate")
+#     end_date_str = request.args.get("endDate")
+#     product_keyword = request.args.get("product", "").strip()
 
-    if not product_keyword:
-        return jsonify({"error": "Product keyword is required"}), 400
+#     if not product_keyword:
+#         return jsonify({"error": "Product keyword is required"}), 400
 
-    today = datetime.utcnow()
-    start_date = (
-        datetime.strptime(start_date_str, "%Y-%m-%d")
-        if start_date_str else today.replace(hour=0, minute=0, second=0)
-    )
-    end_date = (
-        datetime.strptime(end_date_str, "%Y-%m-%d")
-        if end_date_str else today.replace(hour=23, minute=59, second=59)
-    )
+#     today = datetime.utcnow()
+#     start_date = (
+#         datetime.strptime(start_date_str, "%Y-%m-%d")
+#         if start_date_str else today.replace(hour=0, minute=0, second=0)
+#     )
+#     end_date = (
+#         datetime.strptime(end_date_str, "%Y-%m-%d")
+#         if end_date_str else today.replace(hour=23, minute=59, second=59)
+#     )
 
-    try:
-        pipeline = [
-            {
-                "$match": {
-                    "insertDate": {
-                        "$gte": start_date,
-                        "$lte": end_date
-                    }
-                }
-            },
-            {"$unwind": "$items"},
-            {
-                "$match": {
-                    "items.description": {
-                        "$regex": product_keyword,
-                        "$options": "i"
-                    }
-                }
-            },
-            {
-                "$group": {
-                    "_id": "$quote_number",
-                    "quote_date": {"$first": "$insertDate"},
-                    "customer_name": {"$first": "$customer_name"},
-                    "customer_email": {"$first": "$customer_email"},
-                    "customer_phone": {"$first": "$customer_phone"}
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "Quote #": "$_id",
-                    "Quote Date": "$quote_date",
-                    "Customer Name": "$customer_name",
-                    "Customer Email": "$customer_email",
-                    "Customer Contact": "$customer_phone"
-                }
-            },
-            {"$sort": {"Quote Date": 1}}
-        ]
+#     try:
+#         pipeline = [
+#             {
+#                 "$match": {
+#                     "insertDate": {
+#                         "$gte": start_date,
+#                         "$lte": end_date
+#                     }
+#                 }
+#             },
+#             {"$unwind": "$items"},
+#             {
+#                 "$match": {
+#                     "items.description": {
+#                         "$regex": product_keyword,
+#                         "$options": "i"
+#                     }
+#                 }
+#             },
+#             {
+#                 "$group": {
+#                     "_id": "$quote_number",
+#                     "quote_date": {"$first": "$insertDate"},
+#                     "customer_name": {"$first": "$customer_name"},
+#                     "customer_email": {"$first": "$customer_email"},
+#                     "customer_phone": {"$first": "$customer_phone"}
+#                 }
+#             },
+#             {
+#                 "$project": {
+#                     "_id": 0,
+#                     "Quote #": "$_id",
+#                     "Quote Date": "$quote_date",
+#                     "Customer Name": "$customer_name",
+#                     "Customer Email": "$customer_email",
+#                     "Customer Contact": "$customer_phone"
+#                 }
+#             },
+#             {"$sort": {"Quote Date": 1}}
+#         ]
 
-        results = list(adebeo_quotes_collection.aggregate(pipeline))
+#         results = list(adebeo_quotes_collection.aggregate(pipeline))
 
-        # Convert to DataFrame
-        df = pd.DataFrame(results)
+#         # Convert to DataFrame
+#         df = pd.DataFrame(results)
 
-        # Convert date to string for CSV
-        if not df.empty:
-            df["Quote Date"] = df["Quote Date"].dt.strftime("%Y-%m-%d")
+#         # Convert date to string for CSV
+#         if not df.empty:
+#             df["Quote Date"] = df["Quote Date"].dt.strftime("%Y-%m-%d")
 
-        csv_data = df.to_csv(index=False)
+#         csv_data = df.to_csv(index=False)
 
-        filename = f"sketchup_quotes_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
+#         filename = f"sketchup_quotes_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
 
-        return Response(
-            csv_data,
-            mimetype="text/csv",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
+#         return Response(
+#             csv_data,
+#             mimetype="text/csv",
+#             headers={
+#                 "Content-Disposition": f"attachment; filename={filename}"
+#             }
+#         )
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/quote_customer_product_report', methods=['GET'])
