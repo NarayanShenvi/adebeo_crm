@@ -337,7 +337,7 @@ def get_funnel_users2():
             }
         })
 
-        # 🔍 SEARCH LOGIC (DEFAULT: COMPANY)
+        # 🔍 SEARCH LOGIC
         if search:
             search_decoded = unquote(search).strip()
             escaped = re.escape(search_decoded)
@@ -353,29 +353,30 @@ def get_funnel_users2():
                 })
 
             elif search_type == "area":
-                prefix = escaped[:5]  # first 4–5 chars
-
+                prefix = escaped[:5]
                 pipeline.append({
                     "$match": {
                         "$or": [
-                            {
-                                "customer.area": {
-                                    "$regex": prefix,
-                                    "$options": "i"
-                                }
-                            },
-                            {
-                                "customer.subArea": {
-                                    "$regex": prefix,
-                                    "$options": "i"
-                                }
-                            },
-                            {
-                                "customer.address": {
-                                    "$regex": prefix,
-                                    "$options": "i"
-                                }
-                            }
+                            {"customer.area": {"$regex": prefix, "$options": "i"}},
+                            {"customer.subArea": {"$regex": prefix, "$options": "i"}},
+                            {"customer.address": {"$regex": prefix, "$options": "i"}}
+                        ]
+                    }
+                })
+
+            elif search_type == "email":
+                pipeline.append({
+                    "$match": {
+                        "customer.primaryEmail": {"$regex": escaped, "$options": "i"}
+                    }
+                })
+
+            elif search_type == "phone":
+                pipeline.append({
+                    "$match": {
+                        "$or": [
+                            {"customer.mobileNumber": {"$regex": escaped, "$options": "i"}},
+                            {"customer.alternateNumber": {"$regex": escaped, "$options": "i"}}
                         ]
                     }
                 })
@@ -396,14 +397,7 @@ def get_funnel_users2():
                             }
                         }
                     },
-                    {
-                        "$project": {
-                            "_id": 1,
-                            "productCode": 1,
-                            "ProductDisplay": 1,
-                            "productName": 1
-                        }
-                    }
+                    {"$project": {"_id": 1, "productCode": 1, "ProductDisplay": 1, "productName": 1}}
                 ],
                 "as": "products"
             }
@@ -417,8 +411,8 @@ def get_funnel_users2():
 
         # Pagination
         pipeline.extend([
-            { "$skip": skip },
-            { "$limit": limit }
+            {"$skip": skip},
+            {"$limit": limit}
         ])
 
         # Lookup comments
@@ -427,11 +421,7 @@ def get_funnel_users2():
                 "from": "adebeo_customer_comments",
                 "let": { "customer_id_str": { "$toString": "$customer._id" } },
                 "pipeline": [
-                    {
-                        "$match": {
-                            "$expr": { "$eq": ["$customer_id", "$$customer_id_str"] }
-                        }
-                    }
+                    {"$match": {"$expr": {"$eq": ["$customer_id", "$$customer_id_str"]}}}
                 ],
                 "as": "comments"
             }
@@ -443,14 +433,8 @@ def get_funnel_users2():
                 "newRoot": {
                     "$mergeObjects": [
                         "$customer",
-                        {
-                            "comments": "$comments",
-                            "products": "$products"
-                        },
-                        {
-                            "assigned_to": "$assigned_to",
-                            "assigned_date": "$assigned_date"
-                        }
+                        {"comments": "$comments", "products": "$products"},
+                        {"assigned_to": "$assigned_to", "assigned_date": "$assigned_date"}
                     ]
                 }
             }
@@ -461,17 +445,11 @@ def get_funnel_users2():
         # Post-processing
         for r in results:
             r["_id"] = str(r["_id"])
-
             for comment in r.get("comments", []):
                 comment["_id"] = str(comment["_id"])
                 comment["customer_id"] = str(comment["customer_id"])
-
             if not r.get("products"):
-                r["products"] = [{
-                    "productCode": "NA",
-                    "ProductDisplay": "NA",
-                    "productName": "NA"
-                }]
+                r["products"] = [{"productCode": "NA", "ProductDisplay": "NA", "productName": "NA"}]
             else:
                 for product in r["products"]:
                     product["_id"] = str(product["_id"])
@@ -489,6 +467,7 @@ def get_funnel_users2():
             "message": "An error occurred",
             "error": str(e)
         }), 500
+
 
 @app.route("/funnel_users", methods=["GET"])
 @login_required
@@ -3972,6 +3951,225 @@ def calculate_validity_date(duration: str):
 @login_required
 def create_purchase_orders():
     username = request.user
+
+    claims = get_jwt()
+    user_role = claims.get("role")
+
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    try:
+        base_url = 'https://adebeo-crm1.onrender.com'
+
+        performa_number = request.json.get("proforma_id")
+        items = request.json.get("items")
+
+        if not performa_number:
+            return jsonify({"error": "Proforma ID is required"}), 400
+        if not items:
+            return jsonify({"error": "Items list is empty or missing"}), 400
+
+        proforma = adebeo_performa_collection.find_one(
+            {"performa_number": performa_number}
+        )
+        if not proforma:
+            return jsonify({"error": "Proforma not found"}), 404
+
+        customer_id = proforma.get("customer_id", "0")
+        customer = adebeo_customer_collection.find_one(
+            {"_id": ObjectId(customer_id)}
+        )
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+
+        # ✅ FIX: copy items for invoice mutation
+        invoice_items = [dict(item) for item in proforma["items"]]
+
+        created_pois = []
+
+        # ================= PO CREATION LOOP =================
+        for idx, item in enumerate(items):
+
+            product_name = item.get("description", "Unknown")
+            vendor = item.get("company_name", "Unknown Vendor")
+            vendor_address = item.get("address", "Unknown Address")
+            purchase_price = float(item.get("purchase_cost", 0))
+            discount = float(item.get("discount", 0))
+            tax_amount = float(item.get("tax_amount", 0))
+            quantity = int(item.get("quantity", 0))
+            unit_price = float(item.get("unit_price", 0))
+            mode = item.get("mode", "-")
+            business_type = item.get("business_type", "-")
+            subscriptionDuration = item.get("subscriptionDuration", "1 Year")
+
+            revised_purchase_price = purchase_price - discount
+            total_amount = quantity * revised_purchase_price
+            validity_date = calculate_validity_date(subscriptionDuration)
+
+            po_number = generate_purchase_order_number()
+
+            po_data = {
+                "po_number": po_number,
+                "customer_id": customer_id,
+                "customer_name": customer["companyName"],
+                "product_name": product_name,
+                "vendor": vendor,
+                "vendor_address": vendor_address,
+                "quantity": quantity,
+                "purchase_price": revised_purchase_price,
+                "total_amount": total_amount * 1.18,
+                "date": datetime.now(ZoneInfo("Asia/Kolkata")),
+                "status": "Pending",
+                "proforma_id": performa_number,
+                "discount": discount,
+                "mode": mode,
+                "business_type": business_type,
+                "tax_amount": tax_amount
+            }
+
+            result = adebeo_purchase_order_collection.insert_one(po_data)
+            if not result.inserted_id:
+                return jsonify({"error": "Failed to create Purchase Order"}), 500
+
+            # ✅ FIX: attach PO to correct invoice item
+            invoice_items[idx]["po_number"] = po_number
+
+            # ================= PDF DATA (RESTORED) =================
+            po_pdf_data = {
+                "po_number": po_data["po_number"],
+                "customer_name": po_data["customer_name"],
+                "product_name": po_data["product_name"],
+                "vendor": po_data["vendor"],
+                "vendor_address": po_data["vendor_address"],
+                "quantity": po_data["quantity"],
+                "purchase_price": po_data["purchase_price"],
+                "discount": po_data["discount"],
+                "total_amount": po_data["total_amount"],
+                "date": po_data["date"].strftime('%Y-%m-%d'),
+                "proforma_id": performa_number,
+            }
+
+            # ================= PDF GENERATION (UNCHANGED) =================
+            rendered_html = render_template(
+                "purchase_order_template.html",
+                po_number=po_data["po_number"],
+                customer_name=po_data["customer_name"],
+                product_name=po_data["product_name"],
+                vendor=po_data["vendor"],
+                vendor_address=po_data["vendor_address"],
+                quantity=po_data["quantity"],
+                purchase_price=revised_purchase_price,
+                discount=po_data["discount"],
+                tax_amount=po_data["tax_amount"],
+                total_amount=po_data["total_amount"],
+                date=po_data["date"].strftime('%Y-%m-%d'),
+                proforma_id=performa_number,
+                po_pdf_data=po_pdf_data,
+                base_url=base_url
+            )
+
+            pdf_filename = f"purchase_order_{po_number}.pdf"
+            remote_pdf_folder = '/mnt/render/persistent/pdf'
+            os.makedirs(remote_pdf_folder, exist_ok=True)
+            HTML(string=rendered_html).write_pdf(
+                os.path.join(remote_pdf_folder, pdf_filename)
+            )
+
+            adebeo_purchase_order_collection.update_one(
+                {"_id": result.inserted_id},
+                {"$set": {"pdf_filename": pdf_filename}}
+            )
+
+            created_pois.append({"po_number": po_number})
+
+            # ================= ORDER DB =================
+            orders_collection.insert_one({
+                "order_number": po_number,
+                "customer_id": customer_id,
+                "vendor_name": vendor,
+                "product_name": product_name,
+                "quantity": quantity,
+                "purchase_price": unit_price,
+                "total_amount": unit_price * quantity,
+                "status": "Pending",
+                "payment_status": "Pending",
+                "mode": mode,
+                "business_type": business_type,
+                "validity": validity_date,
+                "order_date": datetime.now(),
+                "proforma_id": performa_number
+            })
+
+            # ================= VENDOR PAYMENT =================
+            vendor_payments_collection.insert_one({
+                "order_number": po_number,
+                "vendor_name": vendor,
+                "customer_id": customer_id,
+                "product_name": product_name,
+                "total_amount": total_amount,
+                "status": "Pending",
+                "payment_date": datetime.now(),
+                "proforma_id": performa_number
+            })
+
+        # ================= INVOICE CREATION =================
+        invoice_number = generate_invoice_number()
+
+        invoice_data = {
+            "invoice_number": invoice_number,
+            "customer_id": customer_id,
+            "customer_name": customer["companyName"],
+            "proforma_id": performa_number,
+            "total_amount": proforma["total_amount"],
+            "amount_due": proforma["total_amount"],
+            "payment_status": "Pending",
+
+            # ✅ FIXED
+            "items": invoice_items,
+
+            "invoice_date": datetime.now(),
+            "payment_method": "",
+            "payment_reference": "",
+            "due_date": None,
+            "po_number": po_number,  # backward compatibility
+            "po_ref": proforma.get("refPoValue", "")
+        }
+
+        invoice_collection.insert_one(invoice_data)
+
+        # ================= CUSTOMER PAYMENT =================
+        customer_payments_collection.insert_one({
+            "customer_id": customer_id,
+            "customer_name": customer["companyName"],
+            "invoice_number": invoice_number,
+            "total_amount": proforma["total_amount"],
+            "paid_amount": 0,
+            "remaining_amount": proforma["total_amount"],
+            "invoice_date": datetime.now().strftime('%Y-%m-%d'),
+            "status": "inprog"
+        })
+
+        adebeo_performa_collection.update_one(
+            {"performa_number": performa_number},
+            {"$set": {"purchase_status": True}}
+        )
+
+        return jsonify({
+            "status": "success",
+            "message": "Purchase Orders created successfully!",
+            "purchase_orders": created_pois
+        }), 201
+
+    except Exception as e:
+        logging.error(f"Error creating Purchase Orders: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+#this route has been renamed to old, so we can have PO numbers in the each invoices
+@app.route("/create_purchase_orders_old", methods=["POST"])
+@login_required
+def create_purchase_orders_old():
+    username = request.user
     
     claims = get_jwt()
     user_role = claims.get("role") 
@@ -4085,7 +4283,8 @@ def create_purchase_orders():
 
             # Save Purchase Order to the database
             result = adebeo_purchase_order_collection.insert_one(po_data)
-
+            po_number = po_data["po_number"]  # generated PO number
+                       
             if not result.inserted_id:
                 return jsonify({"error": f"Failed to create Purchase Order for {product_name}"}), 500
 
@@ -6626,7 +6825,7 @@ def get_purchase_report():
                 "customer_name":1
             }},
 
-            {"$sort": {"po_number": -1}}
+            {"$sort": {"po_number": 1}}
         ]
 
         results = list(adebeo_purchase_order_collection.aggregate(pipeline))
@@ -6684,8 +6883,9 @@ def get_business_report():
         datetime.strptime(start_date_str, "%Y-%m-%d")
         if start_date_str else today.replace(hour=0, minute=0, second=0)
     )
+
     end_date = (
-        datetime.strptime(end_date_str, "%Y-%m-%d")
+        datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1)
         if end_date_str else today.replace(hour=23, minute=59, second=59)
     )
 
@@ -6693,19 +6893,41 @@ def get_business_report():
 
     try:
         pipeline = [
-            {"$match": match_filter},
+            {
+                "$match": {
+                    "invoice_date": {"$gte": start_date, "$lte": end_date},
+                    "$expr": {
+                        "$not": {
+                            "$in": [
+                                { "$toLower": "$payment_status" },
+                                ["disabled", "cancelled","regenerated"] 
+                            ]
+                        }
+                    }
+                }
+            },
 
             {"$unwind": "$items"},
 
-            # Join purchase orders
+            # ✅ RESOLVE PO NUMBER (item-level → fallback to invoice-level)
+            {
+                "$addFields": {
+                    "resolved_po_number": {
+                        "$ifNull": ["$items.po_number", "$po_number"]
+                    }
+                }
+            },
+
+            # ✅ JOIN PURCHASE ORDERS USING RESOLVED PO
             {
                 "$lookup": {
                     "from": "adebeo_purchaseOrders",
-                    "localField": "po_number",
+                    "localField": "resolved_po_number",
                     "foreignField": "po_number",
                     "as": "po_data"
                 }
             },
+
             {
                 "$unwind": {
                     "path": "$po_data",
@@ -6713,14 +6935,16 @@ def get_business_report():
                 }
             },
 
-           {
+            {
                 "$project": {
                     "invoice_number": 1,
                     "invoice_date": 1,
                     "customer_name": 1,
-                    "po_number": 1,
 
-                    # SALES (ITEM LEVEL)
+                    # ✅ FINAL PO NUMBER USED
+                    "po_number": "$resolved_po_number",
+
+                    # SALES
                     "product_code": "$items.productCode",
                     "product_description": "$items.description",
                     "sale_base": "$items.sub_total",
@@ -6733,7 +6957,7 @@ def get_business_report():
                 }
             },
 
-            {"$sort": {"invoice_date": 1}}
+            { "$sort": { "invoice_date": 1 } }
         ]
 
         results = list(adebeo_invoice_collection.aggregate(pipeline))
