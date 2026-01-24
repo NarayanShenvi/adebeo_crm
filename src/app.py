@@ -6697,7 +6697,7 @@ def get_sales_report():
             status = (item.get("payment_status") or "").lower()
 
             # Zero amount for cancelled / disabled invoices
-            if status in ["cancelled", "disabled"]:
+            if status and status.lower() in ["cancelled", "disabled", "regenerated"]:
                 final_amount = 0
             else:
                 # Add 18% GST
