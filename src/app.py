@@ -5998,7 +5998,7 @@ def get_activity_report():
 
     try:
         page = max(int(request.args.get('page', 1)), 1)
-        per_page = max(int(request.args.get('per_page', 10)), 1)
+        per_page = max(int(request.args.get('per_page', 200)), 1)
     except ValueError:
         return jsonify({"error": "'page' and 'per_page' must be integers"}), 400
 
