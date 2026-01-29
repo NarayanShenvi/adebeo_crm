@@ -4011,6 +4011,28 @@ def create_purchase_orders():
             validity_date = calculate_validity_date(subscriptionDuration)
 
             po_number = generate_purchase_order_number()
+            company_document = company_datas.find_one({})
+            if company_document:
+                # Clean the keys by removing extra quotes around the field names
+                cleaned_document = {key.strip('\"'): value for key, value in company_document.items()}
+
+                # Now, you can safely access the fields without the extra quotes
+                about_us = cleaned_document.get("about_us", "No information available.")
+                terms1 = cleaned_document.get("terms1", "No terms available.")
+                products = cleaned_document.get("products", "No products information available.")
+                company_name = cleaned_document.get("company_name", "Adebeo")
+                company_address = cleaned_document.get("company_address", "Bangalore")
+                company_contact = cleaned_document.get("company_contact", "9008513444")
+                company_email = cleaned_document.get("company_email", "narayan@adebeo.co.in")
+                company_gstin = cleaned_document.get("company_gstin", "-")
+                company_account_no1 =cleaned_document.get("company_account1", " ")
+                company_bankbranch1 =cleaned_document.get("company_bankbranch1", " ")
+                company_ifsc1 = cleaned_document.get("company_ifsc1", "-")
+                company_swift1 = cleaned_document.get("company_swift1", "-")
+                company_pan = cleaned_document.get("company_pan", "-")
+                invoice_note1= cleaned_document.get("invoice_note1", " ")
+                company_payee= cleaned_document.get("company_payee", " ")
+                po_note1=cleaned_document.get("po_note1","")
 
             po_data = {
                 "po_number": po_number,
