@@ -3994,6 +3994,10 @@ def create_purchase_orders():
             vendor = item.get("company_name", "Unknown Vendor")
             vendor_address = item.get("address", "Unknown Address")
             purchase_price = float(item.get("purchase_cost", 0))
+            contact =  item.get("contact", "-")
+            telephone = item.get("telephone","-")
+            email = item.get("email","-")
+            gstin = item.get("company_gstin","-")
             discount = float(item.get("discount", 0))
             tax_amount = float(item.get("tax_amount", 0))
             quantity = int(item.get("quantity", 0))
@@ -4001,7 +4005,7 @@ def create_purchase_orders():
             mode = item.get("mode", "-")
             business_type = item.get("business_type", "-")
             subscriptionDuration = item.get("subscriptionDuration", "1 Year")
-
+           
             revised_purchase_price = purchase_price - discount
             total_amount = quantity * revised_purchase_price
             validity_date = calculate_validity_date(subscriptionDuration)
@@ -4065,7 +4069,19 @@ def create_purchase_orders():
                 date=po_data["date"].strftime('%Y-%m-%d'),
                 proforma_id=performa_number,
                 po_pdf_data=po_pdf_data,
-                base_url=base_url
+                base_url=base_url,
+                contact_name = contact,
+                email = email,
+                #customer_name = customer.get("companyName", "N/A"),
+                client_ref_po = proforma["refPoValue"],
+                company_name = company_name,
+                company_address = company_address,
+                company_contact = company_contact,
+                company_email = company_email,
+                net_total_words = num2words((revised_purchase_price * quantity) + tax_amount),
+                logo_image ='https://www.adebeo.co.in/wp-content/themes/adebeo5/img/logo.png',   
+                gstin = gstin,
+                notes = po_note1,
             )
 
             pdf_filename = f"purchase_order_{po_number}.pdf"
