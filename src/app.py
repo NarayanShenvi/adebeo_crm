@@ -5498,13 +5498,15 @@ def process_payment():
         invoice_number = data.get('invoice_number')
         invoice_date = data.get('invoice_date')  # ISODate string or date object
         total_amount = data.get('total_amount')
-        paid_amount = data.get('paid_amount')
+        #paid_amount = data.get('paid_amount')
+        paid_amount = data.get('paid_amount', 0)
+        
         payment_status = data.get('payment_status')
         remaining_amount = data.get('remaining_amount', total_amount - paid_amount)  # Default calculation
         comments = data.get('comment')
 
         # Ensure the required fields are present
-        required_fields = ['customer_id','invoice_number', 'total_amount', 'paid_amount', 'payment_status']
+        required_fields = ['customer_id','invoice_number', 'total_amount', 'payment_status']
         missing_fields = [field for field in required_fields if not data.get(field)]
         
         if missing_fields:
