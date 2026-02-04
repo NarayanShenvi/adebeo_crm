@@ -83,6 +83,7 @@ vendor_payments_collection =db['adebeo_vendor_payments']
 company_datas = db['adebeo_company_datas']
 adebeo_categories_collection =db['adebeo_product_categories']
 adebeo_combo_products =db["adebeo_combo_products"]
+renewal_orders_collection = db["renewal_orders"]  # <-- add this line
 
 adebeo_customer_collection.create_index([("companyName", "text")])
 
@@ -3611,10 +3612,255 @@ def update_proforma_enabled(proforma_id):
         logging.error(f"Error updating isEnabled for {proforma_id}: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
         
-
 @app.route("/get_proformas_for_purchase_order", methods=["GET"])
 @login_required
 def get_proformas():
+    from bson import ObjectId
+    import re
+    from datetime import datetime, timedelta
+
+    claims = get_jwt()
+    user_role = claims.get("role")
+
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges are required."}), 403
+
+    customer_name_filter = request.args.get("customer_name")
+    window_days = int(request.args.get("windowDays", 90))
+
+    try:
+        match_conditions = []
+
+        # Default: show only unpurchased
+        match_conditions.append({
+            "$or": [
+                {"purchase_status": False},
+                {"purchase_status": {"$exists": False}}
+            ]
+        })
+
+        # Enabled only
+        match_conditions.append({
+            "$or": [
+                {"isEnabled": True},
+                {"isEnabled": {"$exists": False}}
+            ]
+        })
+
+        # Exclude disabled
+        match_conditions.append({
+            "$or": [
+                {"isDisabled": {"$exists": False}},
+                {"isDisabled": False}
+            ]
+        })
+
+        pipeline = [
+            {"$match": {"$and": match_conditions}},
+            {
+                "$lookup": {
+                    "from": "adebeo_customers",
+                    "let": {"cust_id": {"$toObjectId": "$customer_id"}},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$cust_id"]}}}
+                    ],
+                    "as": "customer"
+                }
+            },
+            {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": True}},
+        ]
+
+        if customer_name_filter:
+            pipeline.append({
+                "$match": {
+                    "customer.companyName": {
+                        "$regex": customer_name_filter,
+                        "$options": "i"
+                    }
+                }
+            })
+
+        pipeline.extend([
+            {"$unwind": {"path": "$items", "preserveNullAndEmptyArrays": True}},
+            {
+                "$lookup": {
+                    "from": "adebeo_products",
+                    "let": {"prod_id": {"$toObjectId": "$items.product_id"}},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$_id", "$$prod_id"]}}}
+                    ],
+                    "as": "product"
+                }
+            },
+            {"$unwind": {"path": "$product", "preserveNullAndEmptyArrays": True}},
+            {
+                "$addFields": {
+                    "item_info": {
+                        "description": {"$ifNull": ["$product.ProductDisplay", "No description"]},
+                        "product_name": {"$ifNull": ["$product.productName", "Unknown Product"]},
+                        "product_code": {"$ifNull": ["$product.productCode", "Unknown Code"]},
+                        "company_name": {"$ifNull": ["$product.ProductCompanyName", "Unknown Company"]},
+                        "contact": {"$ifNull": ["$product.Contact", "-"]},
+                        "telephone": {"$ifNull": ["$product.telephone", "-"]},
+                        "address": {"$ifNull": ["$product.address", "No address"]},
+                        "company_gstin": {"$ifNull": ["$product.companyGstin", "No GSTIN"]},
+                        "primary_locality": {"$ifNull": ["$product.primaryLocality", ""]},
+                        "secondary_locality": {"$ifNull": ["$product.secondaryLocality", ""]},
+                        "city": {"$ifNull": ["$product.city", ""]},
+                        "state": {"$ifNull": ["$product.state", ""]},
+                        "pincode": {"$ifNull": ["$product.pincode", ""]},
+                        "email": {"$ifNull": ["$product.email", ""]},
+                        "sales_code": {"$ifNull": ["$product.salesCode", ""]},
+                        "purchase_cost": {"$ifNull": ["$product.purchaseCost", 0]},
+                        "quantity": {"$ifNull": ["$items.quantity", 0]},
+                        "sub_total": {"$ifNull": ["$items.sub_total", 0]},
+                        "unit_price": {"$ifNull": ["$items.unit_price", 0]},
+                        "discount": {"$ifNull": ["$items.discount", 0]},
+                        "dr_status": {"$ifNull": ["$items.dr_status", ""]},
+                        "subscriptionDuration": {"$ifNull": ["$product.subscriptionDuration", "1 Year"]}
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "number": "$performa_number",
+                        "tag": "$preformaTag"
+                    },
+                    "customer_name": {
+                        "$first": {"$ifNull": ["$customer.companyName", "Unknown"]}
+                    },
+                    "items": {"$push": "$item_info"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "proforma_id": "$_id.number",
+                    "proforma_tag": "$_id.tag",
+                    "customer_name": 1,
+                    "items": 1
+                }
+            }
+        ])
+
+        results = list(adebeo_performa_collection.aggregate(pipeline))
+
+        # Convert ObjectIds safely
+        def convert_ids(obj):
+            if isinstance(obj, list):
+                return [convert_ids(i) for i in obj]
+            if isinstance(obj, dict):
+                return {
+                    k: str(v) if isinstance(v, ObjectId) else convert_ids(v)
+                    for k, v in obj.items()
+                }
+            return obj
+
+        results = convert_ids(results)
+
+        # 🔹 ADD RENEWAL OPPORTUNITIES (SAFE ADD-ON)
+        for proforma in results:
+            customer_from_doc = proforma.get("customer_name", "")
+
+            for item in proforma.get("items", []):
+                product_name = item.get("product_name", "")
+
+                item["renewalOpportunities"] = get_renewal_opportunities_for_po(
+                    orders_collection=orders_collection,
+                    customers_collection=adebeo_customer_collection,
+                    renewal_orders_collection=renewal_orders_collection,
+                    customer_name=customer_from_doc,
+                    product_name=product_name,
+                    window_days=window_days
+                )
+
+        return jsonify(results)
+
+    except Exception as e:
+        logging.error(f"Error in get_proformas: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+def update_renewal_order(new_po_number, old_po_number, old_qty, new_qty, renewal_id):
+    """
+    Called after generating a new PO.
+    Creates or updates a record in renewal_orders_collection.
+    """
+    try:
+        renewal_orders_collection.insert_one({
+            "renewal_id": renewal_id,
+            "old_po_number": old_po_number,
+            "new_po_number": new_po_number,
+            "old_quantity": old_qty,
+            "new_quantity": new_qty,
+            "created_at": datetime.utcnow()
+        })
+    except Exception as e:
+        logging.error(f"Error updating renewal order: {e}")
+
+def get_renewal_opportunities_for_po(
+    orders_collection,
+    customers_collection,
+    renewal_orders_collection,
+    customer_name: str,
+    product_name: str,
+    window_days: int = 90
+):
+    """
+    Returns a list of renewal opportunities for a given customer and product
+    within window_days from today (both past and future).
+    """
+    from datetime import datetime, timedelta
+
+    today = datetime.today()
+    start_date = today - timedelta(days=window_days)
+    end_date = today + timedelta(days=window_days)
+
+    # 1️⃣ Lookup customer IDs by name
+    customer_ids = [
+        c["_id"] for c in customers_collection.find(
+            {"companyName": {"$regex": customer_name, "$options": "i"}},
+            {"_id": 1}
+        )
+    ]
+    if not customer_ids:
+        return []
+
+    # 2️⃣ Find renewal orders matching customer(s), product, and validity window
+    query = {
+        "customer_id": {"$in": [str(cid) for cid in customer_ids]},
+        "product_name": {"$regex": product_name, "$options": "i"},
+        "validity": {"$gte": start_date, "$lte": end_date},
+    }
+
+    # Fetch from orders collection
+    orders = list(orders_collection.find(query))
+
+    result = []
+    for order in orders:
+        # Check if a renewal record exists for this order
+        renewal_record = renewal_orders_collection.find_one({"old_po_number": order.get("order_number")})
+
+        result.append({
+            "orderNumber": order.get("order_number"),
+            "proformaId": order.get("proforma_id"),
+            "product": order.get("product_name"),
+            "validity": order.get("validity"),
+            "originalQuantity": order.get("quantity"),
+            "renewedQuantity": renewal_record.get("new_quantity") if renewal_record else 0,
+            "completionPercent": 100 if renewal_record and renewal_record.get("new_quantity") == order.get("quantity") else 0,
+            "status": renewal_record.get("status") if renewal_record else "Pending",
+            "customer": customer_name,
+            "vendor": order.get("vendor_name"),
+            "renewal_id": str(renewal_record["_id"]) if renewal_record else None
+        })
+
+    return result
+
+@app.route("/get_proformas_for_purchase_order_old", methods=["GET"])
+@login_required
+def get_proformas_old():
     from bson import ObjectId
     import re
 
@@ -7393,6 +7639,163 @@ def get_quote_customer_product_report():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+# ---------------- Route ----------------
+@app.route("/renewal_report", methods=["GET"])
+@jwt_required()
+def renewal_report():
+
+    # ---------- Auth ----------
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Access denied"}), 403
+
+    # ---------- Params ----------
+    view = request.args.get("view")
+
+    if view not in ["REPORT", "PO"]:
+        return jsonify({"error": "view must be REPORT or PO"}), 400
+
+    start_date_str = request.args.get("startDate")
+    end_date_str = request.args.get("endDate")
+
+    customer_name_q = request.args.get("customerName")
+    product_name_q = request.args.get("productName")
+    window_days_str = request.args.get("windowDays")
+
+    # ---------- Validation & Date Logic ----------
+    if view == "REPORT":
+        if not start_date_str or not end_date_str:
+            return jsonify({
+                "error": "startDate and endDate are required for REPORT view"
+            }), 400
+
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1)
+
+    else:  # PO view
+        if not customer_name_q or not product_name_q or not window_days_str:
+            return jsonify({
+                "error": "customerName, productName and windowDays are required for PO view"
+            }), 400
+
+        window_days = int(window_days_str)
+        today = datetime.today()
+        start_date = today - timedelta(days=window_days)
+        end_date = today + timedelta(days=window_days)
+
+    start_date_s = start_date.strftime("%Y-%m-%d")
+    end_date_s = (end_date - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # ---------- Orders Query ----------
+    order_query = {
+        "$or": [
+            {"validity": {"$gte": start_date_s, "$lte": end_date_s}},
+            {"validity": {"$gte": start_date, "$lte": end_date}}
+        ]
+    }
+
+    if view == "PO":
+        order_query["product_name"] = {"$regex": product_name_q, "$options": "i"}
+
+    orders = list(orders_collection.find(order_query))
+
+    report = []
+
+    # ---------- Process Orders ----------
+    for order in orders:
+
+        # ===== CUSTOMER LOOKUP (FINAL, FIXED) =====
+        customer_name = "N/A"
+        cust_id = order.get("customer_id")
+
+        if cust_id:
+            try:
+                customer_oid = (
+                    cust_id if isinstance(cust_id, ObjectId)
+                    else ObjectId(str(cust_id))
+                )
+                customer = adebeo_customer_collection.find_one({"_id": customer_oid})
+
+                if customer:
+                    customer_name = (
+                        customer.get("companyName")
+                        or customer.get("ownerName")
+                        or "N/A"
+                    )
+            except Exception as e:
+                print("Customer lookup failed:", cust_id, str(e))
+
+        # PO view: enforce customer name filter
+        if view == "PO":
+            if customer_name_q.lower() not in customer_name.lower():
+                continue
+
+        # ===== RENEWAL PROGRESS =====
+        renewals = list(
+            renewal_orders_collection.find({"order_id": order["_id"]})
+        )
+
+        renewed_qty = sum(r.get("renewed_quantity", 0) for r in renewals)
+
+        completion_dates = [
+            r.get("completion_date")
+            for r in renewals
+            if r.get("completion_date")
+        ]
+
+        last_completion_date = max(completion_dates) if completion_dates else None
+
+        original_qty = order.get("quantity", 0) or 0
+
+        completion_pct = (
+            round((renewed_qty / original_qty) * 100, 2)
+            if original_qty else 0
+        )
+
+        status = "Completed" if completion_pct == 100 else "Pending"
+
+        validity_val = order.get("validity")
+        if isinstance(validity_val, datetime):
+            validity_val = validity_val.strftime("%Y-%m-%d")
+
+        # ---------- Response ----------
+        if view == "REPORT":
+            report.append({
+                "Order #": order.get("order_number"),
+                "Proforma #": order.get("proforma_id"),
+                "Customer": customer_name,
+                "Vendor": order.get("vendor_name"),
+                "Product": order.get("product_name"),
+                "Original Quantity": original_qty,
+                "Renewed Quantity": renewed_qty,
+                "Completion %": completion_pct,
+                "Status": status,
+                "Completion Date": (
+                    last_completion_date.strftime("%Y-%m-%d")
+                    if last_completion_date else None
+                ),
+                "Validity": validity_val
+            })
+        else:  # PO view
+            report.append({
+                "renewalOrderId": str(order["_id"]),
+                "orderNumber": order.get("order_number"),
+                "customer": customer_name,
+                "product": order.get("product_name"),
+                "vendor": order.get("vendor_name"),
+                "validity": validity_val,
+                "originalQuantity": original_qty,
+                "completionPercent": completion_pct,
+                "status": status
+            })
+
+    return jsonify({
+        "view": view,
+        "totalCount": len(report),
+        "renewalReport": report
+    })
 
 
 #if __name__ == "__main__":
