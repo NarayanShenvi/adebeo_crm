@@ -3721,16 +3721,17 @@ def get_proformas():
                     }
                 }
             },
-            {
+           {
                 "$group": {
                     "_id": {
                         "number": "$performa_number",
                         "tag": "$preformaTag"
                     },
+                    "customer_id": { "$first": "$customer._id" },
                     "customer_name": {
-                        "$first": {"$ifNull": ["$customer.companyName", "Unknown"]}
+                        "$first": { "$ifNull": ["$customer.companyName", "Unknown"] }
                     },
-                    "items": {"$push": "$item_info"}
+                    "items": { "$push": "$item_info" }
                 }
             },
             {
@@ -3738,6 +3739,7 @@ def get_proformas():
                     "_id": 0,
                     "proforma_id": "$_id.number",
                     "proforma_tag": "$_id.tag",
+                    "customer_id": { "$toString": "$customer_id" },
                     "customer_name": 1,
                     "items": 1
                 }
@@ -3758,20 +3760,23 @@ def get_proformas():
             return obj
 
         results = convert_ids(results)
+        
 
         # 🔹 ADD RENEWAL OPPORTUNITIES (SAFE ADD-ON)
         for proforma in results:
-            customer_from_doc = proforma.get("customer_name", "")
+            #customer_from_doc = proforma.get("customer_name", "")
+            customer_id = proforma.get("customer_id")
+            customer_from_doc = proforma.get("customer_id")
+            logging.debug(f"[DEBUG] customer_id inside profoma: {customer_id}")
 
             for item in proforma.get("items", []):
-                product_name = item.get("product_name", "")
-
+                description = item.get("description") or item.get("product_name") or "No description"
+                
                 item["renewalOpportunities"] = get_renewal_opportunities_for_po(
                     orders_collection=orders_collection,
-                    customers_collection=adebeo_customer_collection,
                     renewal_orders_collection=renewal_orders_collection,
-                    customer_name=customer_from_doc,
-                    product_name=product_name,
+                    customer_id=customer_id,
+                    description=description,
                     window_days=window_days
                 )
 
@@ -3790,10 +3795,10 @@ def update_renewal_order(new_po_number, old_po_number, old_qty, new_qty, renewal
     try:
         renewal_orders_collection.insert_one({
             "renewal_id": renewal_id,
-            "old_po_number": old_po_number,
-            "new_po_number": new_po_number,
+            "old_po_numbers": old_po_number,  # now an array
             "old_quantity": old_qty,
             "new_quantity": new_qty,
+            "new_po_number": new_po_number,
             "created_at": datetime.utcnow()
         })
     except Exception as e:
@@ -3801,62 +3806,75 @@ def update_renewal_order(new_po_number, old_po_number, old_qty, new_qty, renewal
 
 def get_renewal_opportunities_for_po(
     orders_collection,
-    customers_collection,
     renewal_orders_collection,
-    customer_name: str,
-    product_name: str,
+    customer_id: str,
+    description: str,
     window_days: int = 90
 ):
-    """
-    Returns a list of renewal opportunities for a given customer and product
-    within window_days from today (both past and future).
-    """
-    from datetime import datetime, timedelta
 
     today = datetime.today()
     start_date = today - timedelta(days=window_days)
     end_date = today + timedelta(days=window_days)
 
-    # 1️⃣ Lookup customer IDs by name
-    customer_ids = [
-        c["_id"] for c in customers_collection.find(
-            {"companyName": {"$regex": customer_name, "$options": "i"}},
-            {"_id": 1}
-        )
-    ]
-    if not customer_ids:
-        return []
+    # 🔹 Convert dates to string if DB stores as string
+    start_str = start_date.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
 
-    # 2️⃣ Find renewal orders matching customer(s), product, and validity window
+    # 🔹 Debug
+    #print(f"[DEBUG] customer_id: {customer_id}")
+    #print(f"[DEBUG] description: {description}")
+    #print(f"[DEBUG] validity range: {start_str} → {end_str}")
+
     query = {
-        "customer_id": {"$in": [str(cid) for cid in customer_ids]},
-        "product_name": {"$regex": product_name, "$options": "i"},
-        "validity": {"$gte": start_date, "$lte": end_date},
+        "customer_id": customer_id,
+        "product_name": {"$regex": re.escape(description), "$options": "i"},
+        "validity": {"$gte": start_str, "$lte": end_str}
     }
 
-    # Fetch from orders collection
+    #print(f"[DEBUG] MongoDB query: {query}")
+
     orders = list(orders_collection.find(query))
+    #print(f"[DEBUG] Orders found: {len(orders)}")
 
     result = []
     for order in orders:
-        # Check if a renewal record exists for this order
-        renewal_record = renewal_orders_collection.find_one({"old_po_number": order.get("order_number")})
+        old_po_number = order.get("order_number")
+
+        # 🔹 Check if a renewal record exists
+        renewal_record = renewal_orders_collection.find_one({"old_po_number": old_po_number})
+
+        if not renewal_record:
+            # 🔹 If no record exists, create one with pending status
+            renewal_record_id = renewal_orders_collection.insert_one({
+                "old_po_number": old_po_number,
+                "new_po_number": None,
+                "old_quantity": order.get("quantity"),
+                "new_quantity": 0,
+                "status": "Pending",
+                "created_at": datetime.utcnow()
+            }).inserted_id
+
+            # Fetch the newly created record
+            renewal_record = renewal_orders_collection.find_one({"_id": renewal_record_id})
 
         result.append({
-            "orderNumber": order.get("order_number"),
+            "orderNumber": old_po_number,
             "proformaId": order.get("proforma_id"),
             "product": order.get("product_name"),
             "validity": order.get("validity"),
             "originalQuantity": order.get("quantity"),
-            "renewedQuantity": renewal_record.get("new_quantity") if renewal_record else 0,
-            "completionPercent": 100 if renewal_record and renewal_record.get("new_quantity") == order.get("quantity") else 0,
-            "status": renewal_record.get("status") if renewal_record else "Pending",
-            "customer": customer_name,
+            "renewedQuantity": renewal_record.get("new_quantity", 0),
+            "completionPercent": (
+                100 if renewal_record.get("new_quantity", 0) == order.get("quantity") else 0
+            ),
+            "status": renewal_record.get("status", "Pending"),
             "vendor": order.get("vendor_name"),
-            "renewal_id": str(renewal_record["_id"]) if renewal_record else None
+            "renewal_id": str(renewal_record["_id"])
         })
 
+    print(f"[DEBUG] Renewal opportunities result: {result}")
     return result
+
 
 @app.route("/get_proformas_for_purchase_order_old", methods=["GET"])
 @login_required
@@ -4251,6 +4269,8 @@ def create_purchase_orders():
             mode = item.get("mode", "-")
             business_type = item.get("business_type", "-")
             subscriptionDuration = item.get("subscriptionDuration", "1 Year")
+            selected_renewals = item.get("selected_renewals", [])
+            total_old_qty = sum(r["originalQuantity"] for r in selected_renewals)
            
             revised_purchase_price = purchase_price - discount
             total_amount = quantity * revised_purchase_price
@@ -4395,6 +4415,18 @@ def create_purchase_orders():
                 "payment_date": datetime.now(),
                 "proforma_id": performa_number
             })
+            
+            #old_po_number = item.get("renewalOpportunities", [{}])[0].get("orderNumber")
+            # ================= CREATE/UPDATE RENEWAL RECORD added on 7 Feb 2026=================
+            renewal_id = f"{performa_number}_{po_number}_{idx}"
+            update_renewal_order(
+                new_po_number=po_number,
+                old_po_number=[r["orderNumber"] for r in selected_renewals],  # save as array
+                old_qty=total_old_qty,
+                new_qty=quantity,
+                renewal_id=renewal_id
+            )
+            #created_pois.append({"po_number": po_number})
 
         # ================= INVOICE CREATION =================
         invoice_number = generate_invoice_number()
@@ -4444,6 +4476,7 @@ def create_purchase_orders():
             "purchase_orders": created_pois
         }), 201
 
+    
     except Exception as e:
         logging.error(f"Error creating Purchase Orders: {str(e)}")
         return jsonify({"error": str(e)}), 500
