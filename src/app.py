@@ -7765,30 +7765,43 @@ def renewal_report():
             if customer_name_q.lower() not in customer_name.lower():
                 continue
 
-        # ===== RENEWAL PROGRESS =====
+      # ===== RENEWAL PROGRESS (UPDATED SCHEMA) =====
+        po_number = order.get("po_number") or order.get("order_number")
+
         renewals = list(
-            renewal_orders_collection.find({"order_id": order["_id"]})
+            renewal_orders_collection.find({
+                "old_po_numbers": po_number
+            })
         )
 
-        renewed_qty = sum(r.get("renewed_quantity", 0) for r in renewals)
+        renewed_qty = sum(
+            r.get("new_quantity", 0) for r in renewals
+        )
+
+        original_qty = (
+            renewals[0].get("old_quantity", 0)
+            if renewals else order.get("quantity", 0) or 0
+        )
 
         completion_dates = [
-            r.get("completion_date")
+            r.get("created_at")
             for r in renewals
-            if r.get("completion_date")
+            if r.get("created_at")
         ]
 
         last_completion_date = max(completion_dates) if completion_dates else None
-
-        original_qty = order.get("quantity", 0) or 0
 
         completion_pct = (
             round((renewed_qty / original_qty) * 100, 2)
             if original_qty else 0
         )
-
         status = "Completed" if completion_pct == 100 else "Pending"
-
+       
+        new_po_number = (
+            renewals[0].get("new_po_number")
+            if renewals else None
+        )
+        
         validity_val = order.get("validity")
         if isinstance(validity_val, datetime):
             validity_val = validity_val.strftime("%Y-%m-%d")
@@ -7805,6 +7818,7 @@ def renewal_report():
                 "Renewed Quantity": renewed_qty,
                 "Completion %": completion_pct,
                 "Status": status,
+                "New PO #": new_po_number,
                 "Completion Date": (
                     last_completion_date.strftime("%Y-%m-%d")
                     if last_completion_date else None
