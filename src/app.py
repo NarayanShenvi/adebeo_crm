@@ -5502,11 +5502,99 @@ def recreate_invoice(cancelled_invoice_id):
         import logging
         logging.error(f"Error recreating invoice: {e}")
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
-
-############################ CxPayment DB ############################
+############################ updated for Search CxPayment ############
 @app.route('/get_cxpayment', methods=['GET'])
 @login_required
 def get_cxpayment():
+    try:
+        base_url = 'https://adebeo-crm1.onrender.com'
+
+        # Query params
+        customer_name = request.args.get("customer_name")
+        invoice_number = request.args.get("invoice_number")
+
+        # Pagination
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        skip = (page - 1) * per_page
+
+        # Include disabled invoices?
+        include_disabled = request.args.get('include_disabled', 'false').lower() == 'true'
+
+        # Base query
+        query = {}
+        if not include_disabled:
+            query["$or"] = [
+                {"isEnabled": {"$exists": False}},
+                {"isEnabled": True}
+            ]
+
+        # Filter by customer name
+        if customer_name:
+            matching_customers = list(db.adebeo_customers.find(
+                {"companyName": {"$regex": customer_name, "$options": "i"}},
+                {"_id": 1}
+            ))
+            if not matching_customers:
+                return jsonify({"message": "No customers found with that name."}), 404
+
+            customer_ids = [str(cust["_id"]) for cust in matching_customers]
+            query["customer_id"] = {"$in": customer_ids}
+
+        # Filter by invoice number
+        if invoice_number:
+            query["invoice_number"] = {"$regex": invoice_number, "$options": "i"}
+
+        # Fetch invoices
+        invoices_cursor = list(
+            invoice_collection.find(query)
+            .sort("invoice_date", -1)
+            .skip(skip)
+            .limit(per_page)
+        )
+
+        if not invoices_cursor:
+            return jsonify({"message": "No payment data found."}), 404
+
+        # Format response
+        invoices = []
+        for invoice in invoices_cursor:
+            pdf_filename = invoice.get("pdf_filename", "")
+            pdf_link = f"/static/pdf/{pdf_filename}" if pdf_filename else ""
+
+            invoices.append({
+                "invoice_id": str(invoice["_id"]),
+                "invoice_number": invoice.get("invoice_number", ""),
+                "customer_name": invoice.get("customer_name", ""),
+                "customer_id": invoice.get("customer_id", ""),
+                "invoice_date": invoice.get("invoice_date", "").strftime('%Y-%m-%d') if invoice.get("invoice_date") else "",
+                "total_amount": invoice.get("total_amount", 0),
+                "items": invoice.get("items", ""),
+                "payment_status": invoice.get("payment_status", ""),
+                "amount_due": invoice.get("amount_due", 0),
+                "pdf_link": pdf_link,
+                "base_url": base_url
+            })
+
+        total_count = invoice_collection.count_documents(query)
+        total_pages = (total_count + per_page - 1) // per_page
+
+        return jsonify({
+            "payments": invoices,
+            "current_page": page,
+            "per_page": per_page,
+            "total_count": total_count,
+            "total_pages": total_pages
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching invoices: {str(e)}")
+        return jsonify({"error": f"An error occurred while fetching invoices: {str(e)}"}), 500
+        
+############################ CxPayment DB ############################
+@app.route('/get_cxpayment_old', methods=['GET'])
+@login_required
+def get_cxpayment_old():
     try:
         base_url = 'https://adebeo-crm1.onrender.com'
         customer_name = request.args.get("customer_name")
@@ -6014,7 +6102,8 @@ def get_quote_activity(company_filter, start_date, end_date, skip=0, limit=None,
             "insertBy": 1,
             "customer_id": 1,
             "quote_number": 1,
-            "quoteTag": 1
+            "quoteTag": 1,
+            "total_amount":1
         }
     ).sort("insertDate", 1)
 
@@ -6033,7 +6122,7 @@ def get_quote_activity(company_filter, start_date, end_date, skip=0, limit=None,
             "activity_type": "Quote",
             "insertDate": quote["insertDate"],
             "insertBy": quote["insertBy"],
-            "details": f"Quote ID: {quote['quote_number']}, Quote Tag: {quote.get('quoteTag', '')}",
+            "details": f"Quote ID: {quote['quote_number']}, Quote Tag: {quote.get('quoteTag', '')}, Total Amount: {quote.get('total_amount', 0)}",
             "company_name": customer_map.get(cid, "Unknown")
         })
 
@@ -6102,7 +6191,7 @@ def get_proforma_activity(company_filter, start_date, end_date, skip=0, limit=No
             "activity_type": "Proforma",
             "insertDate": proforma['insertDate'],
             "insertBy": proforma['insertBy'],
-            "details": f"Proforma Number: {proforma['performa_number']}, Proforma Tag: {proforma.get('preformaTag', '')}",
+            "details": f"Proforma Number: {proforma['performa_number']}, Proforma Tag: {proforma.get('preformaTag', '')}, Total Amount: {proforma.get('total_amount', 0)}",
             "company_name": customer_name
         }
         activities.append(activity)
@@ -6112,20 +6201,21 @@ def get_proforma_activity(company_filter, start_date, end_date, skip=0, limit=No
 
 def get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=None, user=None):
     query = dict(company_filter)
-    query["insertDate"] = {"$gte": start_date, "$lte": end_date}
+    query["invoice_date"] = {"$gte": start_date, "$lte": end_date}  # changed field
     if user:
-        query["insertBy"] = user
+        query["insertBy"] = user  # optional if you store insertBy
 
     cursor = adebeo_invoice_collection.find(
         query,
         {
-            "insertDate": 1,
+            "invoice_date": 1,   # use invoice_date instead of insertDate
             "insertBy": 1,
             "customer_id": 1,
             "invoice_number": 1,
-            "status": 1
+            "status": 1,
+            "total_amount": 1
         }
-    ).sort("insertDate", 1)
+    ).sort("invoice_date", 1)
 
     if limit:
         cursor = cursor.skip(skip).limit(limit)
@@ -6140,9 +6230,9 @@ def get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=Non
         cid = str(inv.get("customer_id", ""))
         activities.append({
             "activity_type": "Invoice",
-            "insertDate": inv["insertDate"],
-            "insertBy": inv["insertBy"],
-            "details": f"Invoice Number: {inv.get('invoice_number','')}, Invoice Status: {inv.get('status','')}",
+            "insertDate": inv.get("invoice_date"),  # keep insertDate key for consistency
+            "insertBy": inv.get("insertBy"),
+            "details": f"Invoice Number: {inv.get('invoice_number','')}, Invoice Status: {inv.get('status','')}, Total Amount: {inv.get('total_amount', 0)}",
             "company_name": customer_map.get(cid, "Unknown")
         })
 
@@ -7668,6 +7758,95 @@ def get_quote_customer_product_report():
             "totalCount": len(report),
             "data": report
         })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/update_vendor_payment', methods=['POST'])
+@jwt_required()
+def update_vendor_payment():
+    claims = get_jwt()
+    user_role = claims.get("role")
+
+    if user_role != "admin":
+        return jsonify({"error": "Access denied. Admin privileges required."}), 403
+
+    try:
+        data = request.json
+        order_numbers = data.get("order_number")  # now an array
+        comment = data.get("comment")
+        payment_date = data.get("payment_date")
+        payment_amount = float(data.get("payment_amount", 0))
+
+        if not order_numbers or payment_amount <= 0:
+            return jsonify({"error": "order_number and payment_amount are required"}), 400
+
+        if payment_date:
+            try:
+                payment_date = datetime.strptime(payment_date, "%Y-%m-%d")
+            except ValueError:
+                return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+        else:
+            payment_date = datetime.utcnow()
+
+        created_at = datetime.utcnow()
+        results = []
+
+        for order_number in order_numbers:
+
+            payment_entry = {
+                "payment_date": payment_date,
+                "comment": comment,
+                "created_at": created_at,
+                "amount": payment_amount
+            }
+
+            result = vendor_payments_collection.update_one(
+                {"order_number": order_number},
+                {"$push": {"payments": payment_entry}}
+            )
+
+            if result.matched_count == 0:
+                results.append({
+                    "order_number": order_number,
+                    "status": "Vendor payment record not found"
+                })
+                continue
+
+            vendor_doc = vendor_payments_collection.find_one({"order_number": order_number})
+            total_paid = sum(p["amount"] for p in vendor_doc.get("payments", []))
+            total_amount = vendor_doc.get("total_amount", 0)
+
+            if total_paid >= total_amount:
+                new_status = "Paid"
+            elif total_paid > 0:
+                new_status = "Inprogress"
+            else:
+                new_status = "Pending"
+
+            vendor_payments_collection.update_one(
+                {"order_number": order_number},
+                {"$set": {"status": new_status, "updated_at": datetime.utcnow()}}
+            )
+
+            if new_status == "Paid":
+                adebeo_purchase_order_collection.update_one(
+                    {"po_number": order_number},
+                    {"$set": {"status": "Paid", "updated_at": datetime.utcnow()}}
+                )
+
+            results.append({
+                "order_number": order_number,
+                "status": new_status,
+                "total_paid": total_paid,
+                "total_amount": total_amount
+            })
+
+        return jsonify({
+            "message": "Payments processed",
+            "results": results
+        }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
