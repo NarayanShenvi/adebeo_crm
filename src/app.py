@@ -25,6 +25,7 @@ from num2words import num2words
 import requests
 import asyncio
 import pprint
+from flask_login import current_user
 
 #from flask_login import current_user
 #from motor.motor_asyncio import AsyncIOMotorClient
@@ -4997,7 +4998,8 @@ def generate_invoice_pdf(invoice_number):
                 {
                     "$set": {  # Use $set to specify the fields to update
                         "pdf_filename": pdf_filename,  # Update pdf_filename field
-                        "invoiced_date": datetime.now().strftime('%Y-%m-%d')  # Update invoiced_date field
+                        "invoiced_date": datetime.now().strftime('%Y-%m-%d'),  # Update invoiced_date field
+                        "insertBy":current_user.name
                     }
                 }    
         )
@@ -6046,45 +6048,53 @@ def process_payment():
 ########################### Report for user #############################
 
 # Helper functions to fetch data based on the report type
-def get_comment_activity(company_filter, start_date, end_date, skip, limit, user=None):
-    date_filter = {
-        'insertDate': {
-            '$gte': start_date,
-            '$lte': end_date
-        }
-    }
-
+def get_comment_activity(company_filter, start_date, end_date, skip=0, limit=None, user=None):
+    """
+    Fetch comment activities for a given filter and date range,
+    handling string-based insertDate from the database.
+    """
     # Build user filter with case-insensitive regex if user is provided
     if user:
         company_filter['insertBy'] = {'$regex': f'^{user}$', '$options': 'i'}
 
-    # Combine all filters
-    filters = {**company_filter, **date_filter}
-
-    # Log the actual filter being applied
-    print("get_comment_activity filter:", filters, "skip:", skip, "limit:", limit)
-
-    comments = adebeo_customer_comments.find(filters).skip(skip).limit(limit).sort("insertDate", 1)
+    # Fetch all comments matching company/user filter
+    comments_cursor = adebeo_customer_comments.find(company_filter).sort("insertDate", 1)
 
     activities = []
-    
-    for comment in comments:
+    for comment in comments_cursor:
+        comment_date_str = comment.get("insertDate")
+        if not comment_date_str:
+            continue
+
+        # Convert string to datetime
+        try:
+            comment_date = datetime.strptime(comment_date_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            # Skip comments with invalid date format
+            continue
+
+        # Apply date filter in Python
+        if not (start_date <= comment_date <= end_date):
+            continue
+
         customer_id = comment.get('customer_id')
         customer_name = get_customer_name_by_id(customer_id) if customer_id else 'Unknown'
 
         activity = {
             "activity_type": "Comment",
-            "insertDate": comment['insertDate'],
+            "insertDate": comment_date,
             "insertBy": comment.get('insertBy', 'Unknown'),
             "details": comment.get('comment', ''),
             "company_name": customer_name
         }
-
         activities.append(activity)
 
-    # Optional debug
-    print("Comment results count:", len(activities))
-    
+    # Apply skip and limit in Python
+    if skip:
+        activities = activities[skip:]
+    if limit:
+        activities = activities[:limit]
+
     return activities
 
 
@@ -6213,7 +6223,8 @@ def get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=Non
             "customer_id": 1,
             "invoice_number": 1,
             "status": 1,
-            "total_amount": 1
+            "total_amount": 1,
+            "proforma_id": 1 
         }
     ).sort("invoice_date", 1)
 
@@ -6228,11 +6239,23 @@ def get_invoice_activity(company_filter, start_date, end_date, skip=0, limit=Non
     activities = []
     for inv in invoices:
         cid = str(inv.get("customer_id", ""))
+        proforma_id = inv.get("proforma_id")
+
+        # Fetch Proforma Tag from Proforma collection
+        proforma_tag = ""
+        if proforma_id:
+            proforma = adebeo_performa_collection.find_one(
+                {"performa_number": proforma_id},
+                {"preformaTag": 1}
+            )
+            if proforma:
+                proforma_tag = proforma.get("preformaTag", "")
+
         activities.append({
             "activity_type": "Invoice",
             "insertDate": inv.get("invoice_date"),  # keep insertDate key for consistency
-            "insertBy": inv.get("insertBy"),
-            "details": f"Invoice Number: {inv.get('invoice_number','')}, Invoice Status: {inv.get('status','')}, Total Amount: {inv.get('total_amount', 0)}",
+            "insertBy": inv.get("insertBy","Admin"),
+            "details": f"Invoice Number: {inv.get('invoice_number','')}, Invoice Tag: {proforma_tag}, Invoice Status: {inv.get('status','')}, Total Amount: {inv.get('total_amount', 0)}",
             "company_name": customer_map.get(cid, "Unknown")
         })
 
