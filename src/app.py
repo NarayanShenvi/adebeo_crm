@@ -85,6 +85,7 @@ company_datas = db['adebeo_company_datas']
 adebeo_categories_collection =db['adebeo_product_categories']
 adebeo_combo_products =db["adebeo_combo_products"]
 renewal_orders_collection = db["renewal_orders"]  # <-- add this line
+renewal_comments_collection =db["renewal_comments"]
 
 adebeo_customer_collection.create_index([("companyName", "text")])
 
@@ -8007,6 +8008,21 @@ def renewal_report():
         validity_val = order.get("validity")
         if isinstance(validity_val, datetime):
             validity_val = validity_val.strftime("%Y-%m-%d")
+             # ===== COMMENTS FETCH =====
+        comments_list = []
+        for renewal_line in renewals:
+            renewal_id = renewal_line.get("renewal_id")
+            if renewal_id:
+                 # Only query if collection exists
+                if 'renewal_comments_collection' in globals():
+                    comments_cursor = renewal_comments_collection.find({"renewal_id": renewal_id}).sort("insertDate", 1)
+                    for c in comments_cursor:
+                        comments_list.append({
+                            "renewal_id": renewal_id,
+                            "comment": c.get("comment"),
+                            "insertBy": c.get("insertBy"),
+                            "insertDate": c.get("insertDate")
+                        })
 
         # ---------- Response ----------
         if view == "REPORT":
@@ -8025,7 +8041,8 @@ def renewal_report():
                     last_completion_date.strftime("%Y-%m-%d")
                     if last_completion_date else None
                 ),
-                "Validity": validity_val
+                "Validity": validity_val,
+                "Comments": comments_list
             })
         else:  # PO view
             report.append({
@@ -8037,7 +8054,8 @@ def renewal_report():
                 "validity": validity_val,
                 "originalQuantity": original_qty,
                 "completionPercent": completion_pct,
-                "status": status
+                "status": status,
+                "Comments": comments_list
             })
 
     return jsonify({
@@ -8045,6 +8063,46 @@ def renewal_report():
         "totalCount": len(report),
         "renewalReport": report
     })
+
+@app.route("/add_renewal_comment", methods=["POST"])
+@jwt_required()
+def add_renewal_comment():
+    """
+    Adds a comment for a specific renewal line identified by renewal_id.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body must be JSON"}), 400
+
+        renewal_id = data.get("renewal_id")
+        comment_text = data.get("comment")
+
+        if not renewal_id or not comment_text:
+            return jsonify({"error": "Both 'renewal_id' and 'comment' are required"}), 400
+
+        # Get the current user from JWT
+        claims = get_jwt()
+        insert_by = claims.get("username", "Unknown")  # Adjust key if your JWT stores username differently
+
+        # Prepare the comment document
+        comment_doc = {
+            "renewal_id": renewal_id,
+            "comment": comment_text,
+            "insertBy": insert_by,
+            "insertDate": datetime.utcnow()
+        }
+
+        # Insert into the renewal_comments_collection
+        result = renewal_comments_collection.insert_one(comment_doc)
+
+        return jsonify({
+            "message": "Comment added successfully",
+            "comment_id": str(result.inserted_id)
+        }), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500    
 
 @app.route('/generate_tds_pdf/<invoice_number>', methods=["POST"])
 @login_required
