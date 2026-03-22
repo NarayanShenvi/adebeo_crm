@@ -4420,7 +4420,7 @@ def create_purchase_orders():
             
             #old_po_number = item.get("renewalOpportunities", [{}])[0].get("orderNumber")
             # ================= CREATE/UPDATE RENEWAL RECORD added on 7 Feb 2026=================
-            renewal_id = f"{performa_number}_{po_number}_{idx}"
+            renewal_id = f"{performa_number}_{po_number}"
             update_renewal_order(
                 new_po_number=po_number,
                 old_po_number=[r["orderNumber"] for r in selected_renewals],  # save as array
@@ -8008,21 +8008,23 @@ def renewal_report():
         validity_val = order.get("validity")
         if isinstance(validity_val, datetime):
             validity_val = validity_val.strftime("%Y-%m-%d")
-             # ===== COMMENTS FETCH =====
-        comments_list = []
-        for renewal_line in renewals:
-            renewal_id = renewal_line.get("renewal_id")
-            if renewal_id:
-                 # Only query if collection exists
-                if 'renewal_comments_collection' in globals():
-                    comments_cursor = renewal_comments_collection.find({"renewal_id": renewal_id}).sort("insertDate", 1)
-                    for c in comments_cursor:
-                        comments_list.append({
-                            "renewal_id": renewal_id,
-                            "comment": c.get("comment"),
-                            "insertBy": c.get("insertBy"),
-                            "insertDate": c.get("insertDate")
-                        })
+        # ===== COMMENTS FETCH =====
+        renewal_id = f"{order.get('proforma_id')}_{order.get('order_number')}".strip()
+        #print("Generated renewal_id:", renewal_id)
+
+        comments_cursor = renewal_comments_collection.find({
+            "renewal_id": {"$regex": f"^{renewal_id}$", "$options": "i"}
+        }).sort("insertDate", 1)
+
+        comments_list = [
+            {
+                "renewal_id": c.get("renewal_id"),
+                "comment": c.get("comment"),
+                "insertBy": c.get("insertBy"),
+                "insertDate": c.get("insertDate")
+            }
+            for c in comments_cursor
+        ]
 
         # ---------- Response ----------
         if view == "REPORT":
