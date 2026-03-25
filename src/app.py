@@ -8067,13 +8067,14 @@ def renewal_report():
     })
 
 @app.route("/add_renewal_comment", methods=["POST"])
-@jwt_required()
+@login_required
 def add_renewal_comment():
     """
     Adds a comment for a specific renewal line identified by renewal_id.
     """
     try:
         data = request.get_json()
+        username = request.user
         if not data:
             return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -8084,14 +8085,17 @@ def add_renewal_comment():
             return jsonify({"error": "Both 'renewal_id' and 'comment' are required"}), 400
 
         # Get the current user from JWT
-        claims = get_jwt()
-        insert_by = claims.get("username", "Unknown")  # Adjust key if your JWT stores username differently
+        #claims = get_jwt()
+        #insert_by = claims.get("username", "Unknown")  # Adjust key if your JWT stores username differently
+
+        # ✅ Get username from JWT identity (recommended way)
+        username = get_jwt_identity()
 
         # Prepare the comment document
         comment_doc = {
             "renewal_id": renewal_id,
             "comment": comment_text,
-            "insertBy": insert_by,
+            "insertBy": username,
             "insertDate": datetime.utcnow()
         }
 
