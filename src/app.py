@@ -5000,7 +5000,7 @@ def generate_invoice_pdf(invoice_number):
                     "$set": {  # Use $set to specify the fields to update
                         "pdf_filename": pdf_filename,  # Update pdf_filename field
                         "invoiced_date": datetime.now().strftime('%Y-%m-%d'),  # Update invoiced_date field
-                        "insertBy":current_user.name
+                        "insertBy":request.user
                     }
                 }    
         )
@@ -8089,7 +8089,7 @@ def add_renewal_comment():
         #insert_by = claims.get("username", "Unknown")  # Adjust key if your JWT stores username differently
 
         # ✅ Get username from JWT identity (recommended way)
-        username = get_jwt_identity()
+        #username = get_jwt_identity()
 
         # Prepare the comment document
         comment_doc = {
