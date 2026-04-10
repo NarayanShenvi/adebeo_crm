@@ -3829,7 +3829,7 @@ def get_renewal_opportunities_for_po(
 
     query = {
         "customer_id": customer_id,
-        "product_name": {"$regex": re.escape(description), "$options": "i"},
+    #    "product_name": {"$regex": re.escape(description), "$options": "i"},
         "validity": {"$gte": start_str, "$lte": end_str}
     }
 
